@@ -1314,3 +1314,341 @@ img, svg {
   text-align: right;
   flex: 1;
 }
+
+/* ============================================================
+   Record page v2 — large mic button, metadata form, take list
+   ============================================================ */
+
+/* ── Shared form input (extends existing .form-select / .form-textarea) ── */
+.form-input {
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  transition: border-color var(--transition);
+  appearance: none;
+}
+.form-input:hover  { border-color: var(--color-text-muted); }
+.form-input:focus  { border-color: var(--color-accent); outline: none; }
+/* Remove number spinner arrows */
+.form-input[type="number"] { -moz-appearance: textfield; }
+.form-input[type="number"]::-webkit-inner-spin-button,
+.form-input[type="number"]::-webkit-outer-spin-button { display: none; }
+
+.form-label--sm { font-size: var(--text-xs); }
+.form-optional  { font-weight: 400; color: var(--color-text-muted); }
+
+/* Generic .btn base (Save / Discard actions in metadata form) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+              border-color var(--transition), transform var(--transition);
+}
+.btn:active { transform: scale(0.97); }
+.btn--primary {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+.btn--primary:hover { background: var(--color-accent-dim); }
+.btn--ghost {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+.btn--ghost:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+/* ── Language tag (inline badge for EN / DE / FA) ── */
+.lang-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-indigo);
+}
+.lang-tag--de {
+  color: color-mix(in srgb, var(--color-indigo) 70%, var(--color-accent));
+}
+.lang-tag--sm {
+  font-size: 0.625rem;
+  min-width: 1.5rem;
+}
+
+/* ── Microphone stage ── */
+.rec-stage {
+  padding-block: var(--space-10) var(--space-12);
+  text-align: center;
+}
+.rec-stage .container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Timer */
+.rec-timer {
+  font-family: var(--font-mono);
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  transition: color var(--transition);
+  line-height: 1;
+  min-height: 1.2em;
+}
+.rec-timer--active {
+  color: var(--color-error);
+}
+
+/* Pulse ring + mic button wrapper */
+.rec-mic-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Reserve space for the pulse ring (extends 16px past button) */
+  width: calc(120px + 32px);
+  height: calc(120px + 32px);
+}
+@keyframes rec-pulse-ring {
+  0%   { transform: scale(1);    opacity: 0.6; }
+  100% { transform: scale(1.55); opacity: 0;   }
+}
+.rec-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--color-error);
+  animation: rec-pulse-ring 1.4s ease-out infinite;
+  pointer-events: none;
+}
+
+/* Large circle mic button */
+.rec-mic-btn {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px solid var(--color-indigo);
+  background: color-mix(in srgb, var(--color-indigo) 15%, var(--color-surface));
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition),
+              transform var(--transition), box-shadow var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 0 transparent;
+  flex-shrink: 0;
+}
+.rec-mic-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-indigo) 28%, var(--color-surface));
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-indigo) 12%, transparent);
+}
+.rec-mic-btn:active:not(:disabled) { transform: scale(0.94); }
+.rec-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.rec-mic-btn--active {
+  background: color-mix(in srgb, var(--color-error) 18%, var(--color-surface));
+  border-color: var(--color-error);
+}
+.rec-mic-btn--active:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error) 28%, var(--color-surface));
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-error) 12%, transparent);
+}
+.rec-mic-btn:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 4px;
+}
+.rec-mic-icon {
+  font-size: 2.75rem;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Hint text */
+.rec-hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+  min-height: 1.4em;
+  transition: color var(--transition);
+}
+
+/* ── Metadata form section ── */
+.rec-meta-section { background: var(--color-surface-2); }
+.rec-meta-intro {
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
+}
+
+/* Inline audio preview */
+.rec-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  flex-wrap: wrap;
+}
+.rec-audio-preview {
+  flex: 1;
+  min-width: 200px;
+  height: 36px;
+  accent-color: var(--color-accent);
+}
+.rec-preview__dur {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+/* Metadata form */
+.rec-meta-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.rec-form-row {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.rec-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 160px;
+}
+.rec-form-group--sm {
+  flex: 0 0 90px;
+  min-width: 0;
+}
+
+/* Translations fieldset */
+.rec-translations-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.rec-translations-fieldset legend {
+  padding: 0 var(--space-2);
+}
+.rec-translations-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+@media (max-width: 600px) {
+  .rec-translations-grid { grid-template-columns: 1fr; }
+}
+
+/* Save / Discard button row */
+.rec-meta-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+}
+
+/* ── Recording list v2 ── */
+.recording-item--v2 {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.recording-item__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.recording-item__tags {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.rec-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-indigo) 12%, var(--color-surface));
+  color: var(--color-indigo);
+  border: 1px solid color-mix(in srgb, var(--color-indigo) 30%, transparent);
+  text-transform: capitalize;
+}
+.rec-tag--cat {
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+.rec-tag--speaker {
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
+/* Translation preview in list item */
+.rec-translations-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+.rec-tl-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.rec-tl-row dd { margin: 0; }
+
+/* Responsive adjustments */
+@media (max-width: 420px) {
+  .rec-stage { padding-block: var(--space-8) var(--space-10); }
+  .rec-mic-btn { width: 100px; height: 100px; }
+  .rec-mic-wrap { width: calc(100px + 32px); height: calc(100px + 32px); }
+  .rec-mic-icon { font-size: 2.25rem; }
+  .rec-timer { font-size: 2rem; }
+  .rec-form-group--sm { flex: 1; }
+}
