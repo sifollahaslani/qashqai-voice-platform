@@ -99,9 +99,9 @@ export default function ClassroomPage() {
             Qashq<span>AI</span> Voice
           </a>
           <nav className="site-nav" aria-label="Main navigation">
-            <a href="/classroom" className="site-nav__link" aria-current="page">
-              Classroom
-            </a>
+            <a href="/classroom" className="site-nav__link" aria-current="page">Classroom</a>
+            <a href="/record"    className="site-nav__link">Record</a>
+            <a href="/about"     className="site-nav__link">About</a>
           </nav>
           <span className="site-badge">v0.3.0 · prototype</span>
         </div>
@@ -168,7 +168,8 @@ export default function ClassroomPage() {
           >
             <div className="container">
               <p className="section-label">{cat.label}</p>
-              <h2 id={`${cat.id}-heading`}>{cat.heading}</h2>
+              <h2 id={`${cat.id}-heading`} className="kilim-heading">{cat.heading}</h2>
+              <div className="kilim-strip" aria-hidden="true" />
               <div className="phrase-cards" role="list">
                 {cat.phrases.map((phrase) => (
                   <article

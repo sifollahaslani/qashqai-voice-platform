@@ -578,6 +578,50 @@ img, svg {
   flex: 1;
 }
 
+/* ---------- Kilim geometric strip ---------- */
+/*
+ * Evokes Qashqai kilim textile patterns using CSS repeating gradients.
+ * Two diagonal stripe layers overlap to create an interlocking diamond motif.
+ */
+.kilim-strip {
+  width: 100%;
+  height: 10px;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      var(--color-accent)   0px, var(--color-accent)   2px,
+      transparent           2px, transparent           8px
+    ),
+    repeating-linear-gradient(
+      45deg,
+      var(--color-indigo)   0px, var(--color-indigo)   2px,
+      transparent           2px, transparent           8px
+    );
+  opacity: 0.65;
+  border-radius: var(--radius-sm);
+  margin-block: var(--space-3) var(--space-6);
+}
+
+/* Kilim accent on section h2 — left border with alternating gold/indigo */
+.kilim-heading {
+  position: relative;
+  padding-left: var(--space-4);
+}
+.kilim-heading::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--color-accent) 0px, var(--color-accent) 6px,
+    var(--color-indigo) 6px, var(--color-indigo) 12px
+  );
+  border-radius: var(--radius-sm);
+}
+
 /* ---------- Beta notice ---------- */
 .beta-notice {
   display: flex;
@@ -598,6 +642,329 @@ img, svg {
   margin-top: 1px;
 }
 
+/* ---------- Voice recorder ---------- */
+.recorder-prompt-area {
+  margin-bottom: var(--space-6);
+}
+.recorder-prompt-display {
+  margin-top: var(--space-4);
+  padding: var(--space-6) var(--space-8);
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  font-size: clamp(var(--text-3xl), 8vw, 4rem);
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-text);
+  letter-spacing: 0.02em;
+  transition: border-color var(--transition);
+  line-height: 1.4;
+}
+.recorder-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.btn-record {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-8);
+  background: var(--color-error);
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--text-base);
+  font-family: inherit;
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background var(--transition), transform var(--transition);
+}
+.btn-record:hover:not(:disabled) {
+  background: #e05555;
+}
+.btn-record:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn-record:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-record--stop {
+  background: var(--color-text-muted);
+}
+.btn-record--stop:hover:not(:disabled) {
+  background: var(--color-text);
+}
+.btn-record__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+.btn-record__square {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #fff;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+.recorder-timer {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-error);
+  letter-spacing: 0.05em;
+}
+
+/* Active phrase chip */
+.phrase-chip--active {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* Recording list */
+.recording-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.recording-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  flex-wrap: wrap;
+}
+.recording-item__info {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+.recording-item__phrase {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+.recording-item__meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.recording-item__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: var(--text-base);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), color var(--transition);
+}
+.btn-icon:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.btn-icon--danger:hover {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+.recorder-unsupported {
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  color: var(--color-error);
+}
+
+/* ---------- About page ---------- */
+.about-grid {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: var(--space-8);
+  align-items: start;
+}
+.about-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.about-text p {
+  color: var(--color-text-muted);
+  line-height: var(--leading-normal);
+}
+.about-stat-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.stat-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+.stat-card--accent {
+  border-color: var(--color-accent);
+}
+.stat-card__number {
+  display: block;
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  color: var(--color-accent);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-1);
+}
+.stat-card__label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Goal list */
+.goal-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  counter-reset: none;
+}
+.goal-item {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+}
+.goal-item__num {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  color: var(--color-indigo);
+  flex-shrink: 0;
+  width: 2.5rem;
+  opacity: 0.7;
+}
+.goal-item__title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+}
+.goal-item__desc {
+  color: var(--color-text-muted);
+  line-height: var(--leading-normal);
+}
+
+/* Principles grid */
+.principles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+.principle-card {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  border-top: 3px solid var(--color-indigo);
+}
+.principle-card__title {
+  font-size: var(--text-base);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+}
+.principle-card__body {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: var(--leading-normal);
+}
+
+/* Partner grid */
+.partner-aspirations {
+  margin-bottom: var(--space-4);
+}
+.partner-aspirations__note {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-4);
+  font-style: italic;
+}
+.partner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+.partner-card {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.partner-card--featured {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 5%, var(--color-surface));
+}
+.partner-card__org {
+  display: inline-block;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: var(--space-2);
+}
+.partner-card__title {
+  font-size: var(--text-base);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+}
+.partner-card__body {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: var(--leading-normal);
+}
+
+/* ---------- Dark-theme classroom overrides ---------- */
+/*
+ * The design system already uses CSS custom properties that flip via
+ * prefers-color-scheme, so most dark-mode support comes for free.
+ * These rules fine-tune classroom-specific elements.
+ */
+@media (prefers-color-scheme: dark) {
+  .kilim-strip {
+    opacity: 0.55;   /* slightly softer against a dark background */
+  }
+  .classroom-intro__block {
+    background: var(--color-surface);
+  }
+  .phrase-card {
+    background: var(--color-surface);
+  }
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 600px) {
   .pipeline {
@@ -611,5 +978,39 @@ img, svg {
   }
   .classroom-intro {
     grid-template-columns: 1fr;
+  }
+}
+
+/* About page grid collapses on tablet */
+@media (max-width: 720px) {
+  .about-grid {
+    grid-template-columns: 1fr;
+  }
+  .about-stat-cards {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    flex: 1;
+    min-width: 120px;
+  }
+}
+
+/* Collapse phrase cards to a single column on very narrow screens */
+@media (max-width: 420px) {
+  .phrase-cards {
+    grid-template-columns: 1fr;
+  }
+  .phrase-card {
+    padding: var(--space-3) var(--space-4);
+  }
+  .classroom-intro__block {
+    padding: var(--space-3) var(--space-4);
+  }
+  .hero {
+    padding-block: var(--space-8) var(--space-6);
+  }
+  .container {
+    padding-inline: var(--space-4);
   }
 }

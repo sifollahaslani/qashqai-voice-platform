@@ -15,9 +15,9 @@ export default function Home() {
             Qashq<span>AI</span> Voice
           </a>
           <nav className="site-nav" aria-label="Main navigation">
-            <a href="/classroom" className="site-nav__link">
-              Classroom
-            </a>
+            <a href="/classroom" className="site-nav__link">Classroom</a>
+            <a href="/record"    className="site-nav__link">Record</a>
+            <a href="/about"     className="site-nav__link">About</a>
           </nav>
           <span className="site-badge" aria-label="Version 0.3.0 prototype">
             v0.3.0 · prototype
