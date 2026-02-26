@@ -541,6 +541,12 @@ img, svg {
   direction: rtl;
   text-align: right;
 }
+.phrase-card__phonetic {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-accent);
+  letter-spacing: 0.03em;
+}
 .phrase-card__translations {
   display: flex;
   flex-direction: column;

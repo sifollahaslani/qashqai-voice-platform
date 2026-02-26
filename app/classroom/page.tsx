@@ -1,30 +1,86 @@
 import ChatDemo, { SamplePhrase } from '../components/ChatDemo'
 
-// ---------- Classroom phrase data ----------
+// ---------- Data types ----------
 
 interface ClassroomPhrase {
-  qashqai: string
-  en: string
-  fa: string
+  qashqai:  string   // Arabic-script Qashqai
+  phonetic: string   // Latin romanisation (syllable dots = stress break)
+  en:       string
+  fa:       string
 }
 
-const CLASSROOM_PHRASES: ClassroomPhrase[] = [
-  { qashqai: 'سلام',                     en: 'Hello',                    fa: 'سلام' },
-  { qashqai: 'سن نئجه‌سین؟',              en: 'How are you?',             fa: 'حال شما چطور است؟' },
-  { qashqai: 'من قاشقایام',               en: 'I am Qashqai',             fa: 'من قشقایی هستم' },
-  { qashqai: 'ممنون',                     en: 'Thank you',                fa: 'ممنون' },
-  { qashqai: 'بو نه‌دیر؟',               en: 'What is this?',            fa: 'این چیست؟' },
-  { qashqai: 'بو دیل بیزیم دیلیمیز',     en: 'This language is ours',    fa: 'این زبان، زبان ماست' },
-  { qashqai: 'خوش گلدین!',               en: 'Welcome!',                 fa: 'خوش آمدی!' },
-  { qashqai: 'گئدیریم',                   en: 'I am going',               fa: 'دارم می‌روم' },
+interface PhraseCategory {
+  id:      string
+  label:   string   // section-label chip text
+  heading: string   // h3
+  phrases: ClassroomPhrase[]
+}
+
+// ---------- Phrase data ----------
+
+const CATEGORIES: PhraseCategory[] = [
+  {
+    id:      'greetings',
+    label:   'Section 1',
+    heading: 'Greetings & Basics',
+    phrases: [
+      { qashqai: 'سلام',          phonetic: 'sa·lam',        en: 'Hello',               fa: 'سلام' },
+      { qashqai: 'خوش گلدین',     phonetic: 'xoş gel·din',   en: 'Welcome',             fa: 'خوش آمدی' },
+      { qashqai: 'سن نئجه‌سین؟',  phonetic: 'sən ne·ce·sin', en: 'How are you?',        fa: 'حال شما چطور است؟' },
+      { qashqai: 'ای یاخشی',      phonetic: 'ay yax·şı',     en: 'I am fine',           fa: 'خوبم' },
+      { qashqai: 'ممنون',         phonetic: 'mem·nun',        en: 'Thank you',           fa: 'ممنون' },
+      { qashqai: 'خداحافظ',       phonetic: 'xo·da·ha·fez',  en: 'Goodbye',             fa: 'خداحافظ' },
+      { qashqai: 'بئله',          phonetic: 'be·le',          en: 'Yes',                 fa: 'بله' },
+      { qashqai: 'خئیر',          phonetic: 'xeyr',           en: 'No',                  fa: 'نه' },
+      { qashqai: 'من قاشقایام',   phonetic: 'mən qaş·qa·yam', en: 'I am Qashqai',      fa: 'من قشقایی هستم' },
+      { qashqai: 'بو دیل بیزیم دیلیمیز', phonetic: 'bu dil bi·zim di·li·miz', en: 'This language is ours', fa: 'این زبان، زبان ماست' },
+    ],
+  },
+  {
+    id:      'numbers',
+    label:   'Section 2',
+    heading: 'Numbers 1–10',
+    phrases: [
+      { qashqai: 'بیر',    phonetic: 'bir',      en: 'One (1)',    fa: 'یک' },
+      { qashqai: 'ایکی',   phonetic: 'i·ki',     en: 'Two (2)',    fa: 'دو' },
+      { qashqai: 'اوچ',    phonetic: 'üç',       en: 'Three (3)', fa: 'سه' },
+      { qashqai: 'دؤرد',   phonetic: 'dörd',     en: 'Four (4)',  fa: 'چهار' },
+      { qashqai: 'بئش',    phonetic: 'beş',      en: 'Five (5)',  fa: 'پنج' },
+      { qashqai: 'آلتی',   phonetic: 'al·tı',    en: 'Six (6)',   fa: 'شش' },
+      { qashqai: 'یئدّی',  phonetic: 'yed·di',   en: 'Seven (7)', fa: 'هفت' },
+      { qashqai: 'سکّیز',  phonetic: 'sək·kiz',  en: 'Eight (8)', fa: 'هشت' },
+      { qashqai: 'دوقّوز', phonetic: 'doq·quz',  en: 'Nine (9)',  fa: 'نه' },
+      { qashqai: 'اون',    phonetic: 'on',        en: 'Ten (10)', fa: 'ده' },
+    ],
+  },
+  {
+    id:      'animals',
+    label:   'Section 3',
+    heading: 'Animals',
+    phrases: [
+      { qashqai: 'آت',    phonetic: 'at',        en: 'Horse',  fa: 'اسب' },
+      { qashqai: 'ایت',   phonetic: 'it',        en: 'Dog',    fa: 'سگ' },
+      { qashqai: 'پیشیک', phonetic: 'pi·şik',    en: 'Cat',    fa: 'گربه' },
+      { qashqai: 'قویون', phonetic: 'qo·yun',    en: 'Sheep',  fa: 'گوسفند' },
+      { qashqai: 'اینک',  phonetic: 'i·nək',     en: 'Cow',    fa: 'گاو' },
+      { qashqai: 'گئچی',  phonetic: 'ke·çi',     en: 'Goat',   fa: 'بز' },
+      { qashqai: 'ائشّک', phonetic: 'eş·şek',    en: 'Donkey', fa: 'الاغ' },
+      { qashqai: 'قوش',   phonetic: 'quş',       en: 'Bird',   fa: 'پرنده' },
+      { qashqai: 'بالیق', phonetic: 'ba·lıq',    en: 'Fish',   fa: 'ماهی' },
+      { qashqai: 'قورد',  phonetic: 'qurd',      en: 'Wolf',   fa: 'گرگ' },
+    ],
+  },
 ]
 
-// Chat chips: Qashqai phrases only, so the demo stays on-topic
-const CHAT_PHRASES: SamplePhrase[] = CLASSROOM_PHRASES.map((p) => ({
-  language: 'qashqai',
-  text:     p.qashqai,
-  label:    `Qashqai: ${p.en}`,
-}))
+// Chat chips — a representative mix from all categories
+const CHAT_PHRASES: SamplePhrase[] = [
+  { language: 'qashqai', text: 'سلام',           label: 'Qashqai: Hello' },
+  { language: 'qashqai', text: 'سن نئجه‌سین؟',  label: 'Qashqai: How are you?' },
+  { language: 'qashqai', text: 'ممنون',          label: 'Qashqai: Thank you' },
+  { language: 'qashqai', text: 'بیر ایکی اوچ',  label: 'Qashqai: One two three' },
+  { language: 'qashqai', text: 'آت و قویون',    label: 'Qashqai: Horse and sheep' },
+  { language: 'qashqai', text: 'من قاشقایام',   label: 'Qashqai: I am Qashqai' },
+]
 
 // ---------- Page ----------
 
@@ -60,7 +116,8 @@ export default function ClassroomPage() {
               ← Home
             </a>
             <h1 id="classroom-heading" style={{ marginTop: 'var(--space-4)' }}>
-              Qashqai Classroom <em style={{ fontSize: '0.6em', verticalAlign: 'middle' }}>Beta</em>
+              Qashqai Classroom{' '}
+              <em style={{ fontSize: '0.6em', verticalAlign: 'middle' }}>Beta</em>
             </h1>
           </div>
         </section>
@@ -75,7 +132,8 @@ export default function ClassroomPage() {
               <span className="beta-notice__icon" aria-hidden="true">ⓘ</span>
               <span>
                 This is an early-stage demo. Phrase translations are illustrative and may not yet
-                reflect community-validated Qashqai orthography.
+                reflect community-validated Qashqai orthography. Phonetics use a simplified
+                Latin romanisation; syllable breaks are marked with a centre dot (·).
               </span>
             </div>
 
@@ -84,64 +142,72 @@ export default function ClassroomPage() {
                 <p className="classroom-intro__lang">English</p>
                 <p className="classroom-intro__text">
                   Welcome to the QashqAI Classroom — an interactive space for exploring
-                  the Qashqai language. Browse the phrase cards below to learn common
-                  expressions, then use the chat area to practise with the AI pipeline.
+                  the Qashqai language. Browse the phrase cards below (greetings, numbers,
+                  and animals), then use the chat area to practise with the AI pipeline.
                 </p>
               </div>
               <div className="classroom-intro__block" dir="rtl" lang="fa">
                 <p className="classroom-intro__lang" style={{ textAlign: 'right' }}>فارسی</p>
                 <p className="classroom-intro__text" dir="rtl">
-                  به کلاس درس QashqAI خوش آمدید — فضایی تعاملی برای آشنایی با
-                  زبان قشقایی. کارت‌های عبارات زیر را مرور کنید و سپس از بخش چت
-                  برای تمرین با هوش مصنوعی استفاده کنید.
+                  به کلاس درس QashqAI خوش آمدید — فضایی تعاملی برای آشنایی با زبان
+                  قشقایی. کارت‌های عبارات زیر (احوال‌پرسی، اعداد و نام حیوانات) را مرور
+                  کنید و سپس از بخش چت برای تمرین با هوش مصنوعی استفاده کنید.
                 </p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Phrase cards */}
-        <section className="section" aria-labelledby="phrases-heading">
-          <div className="container">
-            <p className="section-label">Vocabulary</p>
-            <h2 id="phrases-heading">Common Qashqai phrases</h2>
-            <div className="phrase-cards" role="list">
-              {CLASSROOM_PHRASES.map((phrase) => (
-                <article
-                  key={phrase.qashqai}
-                  className="phrase-card"
-                  role="listitem"
-                  aria-label={`Qashqai phrase: ${phrase.en}`}
-                >
-                  {/* Qashqai — RTL */}
-                  <p className="phrase-card__qashqai" lang="az" dir="rtl">
-                    {phrase.qashqai}
-                  </p>
+        {/* Phrase categories */}
+        {CATEGORIES.map((cat) => (
+          <section
+            key={cat.id}
+            id={cat.id}
+            className="section"
+            aria-labelledby={`${cat.id}-heading`}
+          >
+            <div className="container">
+              <p className="section-label">{cat.label}</p>
+              <h2 id={`${cat.id}-heading`}>{cat.heading}</h2>
+              <div className="phrase-cards" role="list">
+                {cat.phrases.map((phrase) => (
+                  <article
+                    key={phrase.qashqai}
+                    className="phrase-card"
+                    role="listitem"
+                    aria-label={`${phrase.en} in Qashqai`}
+                  >
+                    {/* Qashqai script — RTL */}
+                    <p className="phrase-card__qashqai" lang="az" dir="rtl">
+                      {phrase.qashqai}
+                    </p>
 
-                  {/* Translations */}
-                  <div className="phrase-card__translations">
-                    <div className="phrase-card__row">
-                      <span className="phrase-card__lang-tag" aria-label="English">EN</span>
-                      <span className="phrase-card__translation" lang="en">
-                        {phrase.en}
-                      </span>
+                    {/* Phonetic pronunciation */}
+                    <p className="phrase-card__phonetic" aria-label={`Pronunciation: ${phrase.phonetic}`}>
+                      /{phrase.phonetic}/
+                    </p>
+
+                    {/* Translations */}
+                    <div className="phrase-card__translations">
+                      <div className="phrase-card__row">
+                        <span className="phrase-card__lang-tag" aria-label="English">EN</span>
+                        <span className="phrase-card__translation" lang="en">
+                          {phrase.en}
+                        </span>
+                      </div>
+                      <div className="phrase-card__row">
+                        <span className="phrase-card__lang-tag" aria-label="Persian">FA</span>
+                        <span className="phrase-card__translation" lang="fa" dir="rtl">
+                          {phrase.fa}
+                        </span>
+                      </div>
                     </div>
-                    <div className="phrase-card__row">
-                      <span className="phrase-card__lang-tag" aria-label="Persian">FA</span>
-                      <span
-                        className="phrase-card__translation"
-                        lang="fa"
-                        dir="rtl"
-                      >
-                        {phrase.fa}
-                      </span>
-                    </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                ))}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        ))}
 
         {/* Chat practice */}
         <section id="classroom-chat" className="section" aria-labelledby="chat-practice-heading">
