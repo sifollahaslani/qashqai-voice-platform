@@ -1,5 +1,7 @@
+import os
 from typing import Literal, List, Optional
-from fastapi import FastAPI
+import anthropic
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 
@@ -103,22 +105,71 @@ class CulturalGuardianAgent(BaseAgent):
         )
 
 
+_SYSTEM_PROMPTS = {
+    "qashqai": (
+        "Sen QashqAI Voice platformunun akıl yürütme ajanısın. "
+        "Qashqai Türkçesi konuşan kullanıcılara yardımcı oluyorsun — bu dil İran'da konuşulan, "
+        "tehlike altındaki bir Türk dilidir. "
+        "Yanıtlarını mümkün olduğunca Qashqai Türkçesiyle ver; "
+        "gerektiğinde Farsça veya Türkiye Türkçesiyle destekle. "
+        "Dilin korunmasına ve yaşatılmasına katkıda bulun."
+    ),
+    "fa": (
+        "شما دستیار هوشمند پلتفرم QashqAI Voice هستید. "
+        "به کاربران فارسی‌زبان به طور کامل به فارسی پاسخ دهید. "
+        "در صورت نیاز، ارتباط فرهنگی با جوامع قشقایی را در نظر بگیرید."
+    ),
+    "tr": (
+        "Sen QashqAI Voice platformunun akıl yürütme ajanısın. "
+        "Türkçe konuşan kullanıcılara tam olarak Türkçe yanıt ver. "
+        "Gerektiğinde Qashqai Türkçesiyle olan kültürel bağlantılara değin."
+    ),
+    "en": (
+        "You are the reasoning agent of the QashqAI Voice platform, "
+        "a cultural-technological initiative for preserving the Qashqai language — "
+        "an endangered Turkic language spoken in Iran. "
+        "Respond fully in English and, where relevant, highlight connections "
+        "to Qashqai language and culture."
+    ),
+}
+
+
 class ReasoningAgent(BaseAgent):
     """
-    Main reasoning engine (placeholder).
+    Main reasoning engine — powered by Claude claude-opus-4-6 with adaptive thinking.
+    Uses a language-specific system prompt to respond in the user's language.
     """
 
-    def handle(self, msg: Message) -> str:
-        base = msg.text.strip()
-        lang = msg.language
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self._client = anthropic.AsyncAnthropic(
+            api_key=os.environ.get("ANTHROPIC_API_KEY")
+        )
 
-        if lang == "qashqai":
-            return f"Qashqai reasoning: «{base}»."
-        if lang == "fa":
-            return f"استدلال قشقایی: «{base}»."
-        if lang == "tr":
-            return f"Türkçe akıl yürütme: «{base}»."
-        return f'English reasoning: \u201c{base}\u201d.'
+    async def handle(self, msg: Message) -> str:
+        lang = msg.language or "en"
+        system = _SYSTEM_PROMPTS.get(lang, _SYSTEM_PROMPTS["en"])
+
+        try:
+            async with self._client.messages.stream(
+                model="claude-opus-4-6",
+                max_tokens=1024,
+                thinking={"type": "adaptive"},
+                system=system,
+                messages=[{"role": "user", "content": msg.text.strip()}],
+            ) as stream:
+                final = await stream.get_final_message()
+
+            return next(
+                (block.text for block in final.content if block.type == "text"),
+                "",
+            )
+        except anthropic.AuthenticationError:
+            raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY is missing or invalid.")
+        except anthropic.APIConnectionError:
+            raise HTTPException(status_code=502, detail="Could not connect to Claude API.")
+        except anthropic.APIStatusError as exc:
+            raise HTTPException(status_code=502, detail=f"Claude API error {exc.status_code}: {exc.message}")
 
 
 class OrchestratorAgent(BaseAgent):
@@ -134,7 +185,7 @@ class OrchestratorAgent(BaseAgent):
         self.guardian = CulturalGuardianAgent("cultural_guardian")
         self.reasoner = ReasoningAgent("reasoner")
 
-    def run(self, msg: Message) -> ChatResult:
+    async def run(self, msg: Message) -> ChatResult:
         steps: List[AgentResponse] = []
 
         # Resolve language (auto-detect if omitted)
@@ -149,7 +200,7 @@ class OrchestratorAgent(BaseAgent):
         g = self.guardian.handle(msg)
         steps.append(AgentResponse(agent="cultural_guardian", text=g))
 
-        r = self.reasoner.handle(msg)
+        r = await self.reasoner.handle(msg)
         final = AgentResponse(agent="reasoner", text=r)
         steps.append(final)
 
@@ -183,5 +234,5 @@ def detect_api(msg: Message):
 
 
 @app.post("/chat", response_model=ChatResult)
-def chat_api(msg: Message):
-    return orchestrator.run(msg)
+async def chat_api(msg: Message):
+    return await orchestrator.run(msg)
