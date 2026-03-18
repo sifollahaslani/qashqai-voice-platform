@@ -1,0 +1,21 @@
+# Vercel
+.vercel
+.env*.local
+
+# Environment & secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Next.js
+app/.next/
+app/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

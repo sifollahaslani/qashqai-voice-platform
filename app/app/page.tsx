@@ -1,4 +1,4 @@
-import ChatDemo from './components/ChatDemo'
+import ChatDemo from '../components/ChatDemo'
 
 export default function Home() {
   return (

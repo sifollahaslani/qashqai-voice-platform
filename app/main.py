@@ -2,6 +2,7 @@ import os
 from typing import Literal, List, Optional
 import anthropic
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 
@@ -213,6 +214,19 @@ app = FastAPI(
     title="QashqAI Voice Multi-Agent Platform",
     description="Prototype: cultural guardian + reasoning agent + orchestrator",
     version="0.3.0",
+)
+
+# ---------- CORS ----------
+# ALLOWED_ORIGINS env var: comma-separated list of frontend URLs.
+# Falls back to localhost for local development.
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
+_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 orchestrator = OrchestratorAgent()

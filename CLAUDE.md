@@ -1,32 +1,50 @@
 # QashqAI Voice Platform
 
-A cultural–technological initiative for preserving the Qashqai (an endangered Turkic language spoken in Iran) through ethical artificial intelligence. The platform routes multilingual messages through a three-agent pipeline: language detection → cultural safety check → language-aware reasoning.
+A cultural–technological initiative for preserving the Qashqai language — an endangered Turkic language spoken in Iran — through ethical, community-centred artificial intelligence. The platform routes multilingual messages through a three-agent pipeline: language detection → cultural safety check → language-aware reasoning powered by Claude.
 
 ## Tech stack
 
-| Layer    | Technology                          |
-|----------|-------------------------------------|
-| Backend  | Python 3, FastAPI, Uvicorn, Pydantic |
-| Frontend | TypeScript, React, Next.js           |
+| Layer    | Technology                                      |
+|----------|-------------------------------------------------|
+| Backend  | Python 3, FastAPI, Uvicorn, Pydantic            |
+| AI       | Anthropic SDK — `claude-opus-4-6`, adaptive thinking |
+| Frontend | TypeScript, React 19, Next.js 16 (App Router)   |
 
 ## Project structure
 
 ```
 qashqai-voice-platform/
-├── app/
-│   ├── main.py        # FastAPI backend — agents, detection, API routes
-│   ├── page.tsx       # Next.js home page — interactive chat demo UI
-│   ├── layout.tsx     # Next.js root layout — metadata, globals.css import
-│   └── globals.css    # Design system — tokens, reset, component classes
-├── requirements.txt   # Python deps: fastapi, uvicorn
+├── app/                        # Next.js project root
+│   ├── app/                    # Next.js App Router pages
+│   │   ├── page.tsx            # Home page — hero, language grid, pipeline diagram, chat demo
+│   │   ├── layout.tsx          # Root layout — metadata, globals.css import
+│   │   └── globals.css         # Design system — CSS tokens, reset, component classes
+│   ├── classroom/
+│   │   └── page.tsx            # Classroom page — phrase cards + chat practice (Beta)
+│   ├── components/
+│   │   └── ChatDemo.tsx        # Reusable chat UI — language selector, sample chips, agent output
+│   ├── main.py                 # FastAPI backend — agents, language detection, API routes
+│   ├── package.json            # Node deps: Next.js 16, React 19
+│   └── node_modules/           # Installed — ready to run
+├── requirements.txt            # Python deps: fastapi, uvicorn, anthropic
 └── CLAUDE.md
 ```
+
+## Supported languages
+
+| Code      | Language | Script     |
+|-----------|----------|------------|
+| `qashqai` | Qashqai  | Arabic RTL |
+| `fa`      | Persian  | Arabic RTL |
+| `tr`      | Turkish  | Latin      |
+| `en`      | English  | Latin      |
 
 ## Running the backend
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+export ANTHROPIC_API_KEY=sk-...        # required — used by ReasoningAgent
+uvicorn app.main:app --reload          # run from qashqai-voice-platform/
 ```
 
 - API root:     http://localhost:8000
@@ -35,27 +53,29 @@ uvicorn app.main:app --reload
 
 ## Running the frontend
 
-The frontend is a Next.js app directory project. A `package.json` does not yet exist in the repo — bootstrap it with:
-
 ```bash
-npm init -y
-npm install next react react-dom
-npm install -D typescript @types/react @types/node
-npx next dev
+cd app
+npm install        # already done — node_modules present
+npm run dev        # Next.js dev server on http://localhost:3000
 ```
 
-The Next.js dev server (port 3000) should proxy `/chat` and `/detect` requests to the FastAPI backend on port 8000.
+Next.js proxies `/chat` and `/detect` to the FastAPI backend on port 8000.
+For production, configure `next.config.js` with a `rewrites` rule.
 
 ## API reference
 
 ### `GET /`
 Health check. Returns project name, status, and available endpoints.
 
+```json
+{ "project": "QashqAI Voice", "status": "running", "endpoints": ["/chat", "/detect"] }
+```
+
 ### `POST /detect`
-Detect the language of a text snippet without running the full agent pipeline.
+Detect the language of a text snippet — no agent pipeline involved.
 
 ```json
-{ "text": "سلام، سن نئجه‌سین؟" }
+{ "text": "سن نئجه‌سین؟" }
 ```
 Response:
 ```json
@@ -66,55 +86,91 @@ Response:
 Run the full three-agent pipeline. `language` is optional — omit it for auto-detection.
 
 ```json
-{ "language": "qashqai", "text": "من قاشقایام" }
-```
-```json
-{ "text": "Merhaba!" }
+{ "text": "من قاشقایام" }
+{ "language": "fa", "text": "سلام، چطوری؟" }
 ```
 Response:
 ```json
 {
-  "detected_language": "tr",
+  "detected_language": "qashqai",
   "steps": [
-    { "agent": "language_detector", "text": "Detected language='tr' (confidence: high)." },
-    { "agent": "cultural_guardian", "text": "Cultural check passed for language='tr'. Content looks respectful." },
-    { "agent": "reasoner",          "text": "Türkçe akıl yürütme: «Merhaba!»." }
+    { "agent": "language_detector", "text": "Detected language='qashqai' (confidence: medium)." },
+    { "agent": "cultural_guardian", "text": "Cultural check passed for language='qashqai'. Content looks respectful." },
+    { "agent": "reasoner",          "text": "…Claude response in Qashqai/Persian/Turkish…" }
   ],
-  "final": { "agent": "reasoner", "text": "Türkçe akıl yürütme: «Merhaba!»." }
+  "final": { "agent": "reasoner", "text": "…" }
 }
 ```
 
-Supported language codes: `qashqai`, `fa` (Persian), `tr` (Turkish), `en` (English).
-
 ## Architecture
 
-### Agent pipeline (`app/main.py`)
+### Three-agent pipeline (`app/main.py`)
 
 ```
 OrchestratorAgent.run(msg)
-  1. detect_language(text)    → if language not provided
-  2. CulturalGuardianAgent    → safety / content check
-  3. ReasoningAgent           → language-specific response
+  1. detect_language(text)    → if language not provided by caller
+  2. CulturalGuardianAgent    → content safety / respectfulness check
+  3. ReasoningAgent           → Claude-powered, language-specific response
 ```
 
-`detect_language()` uses Unicode script heuristics (no ML dependencies):
-- Arabic-script characters + Qashqai-specific markers → `qashqai`
+#### Agent 1 — Language Detector (`detect_language()`)
+Pure heuristic — no ML dependencies. Uses Unicode script analysis:
+
+- Arabic-script characters + Qashqai-specific vowel markers (`ۆۉۊۋ`) or ≥ 2 Qashqai function words → `qashqai`
 - Arabic-script characters otherwise → `fa`
-- Latin characters + Turkish diacritics (ğ ş ı ö ü ç) → `tr`
+- Latin characters + Turkish diacritics (`ğ ş ı ö ü ç`) → `tr`
 - Latin characters otherwise → `en`
 
-### Frontend (`app/page.tsx`)
+Confidence levels: `low` / `medium` / `high` — reported in the pipeline steps.
 
-Client component (`'use client'`). Sections:
-- **Hero** — mission statement
-- **Languages** — badge grid for all four supported languages
-- **Pipeline** — visual three-step flow diagram
-- **Chat demo** — interactive form with language selector, sample phrase chips, and live agent output
+#### Agent 2 — Cultural Guardian (`CulturalGuardianAgent`)
+Validates content before it reaches the LLM. Currently checks for empty text; designed to be extended with community-defined cultural safety rules or an LLM-based classifier.
+
+#### Agent 3 — Reasoning Agent (`ReasoningAgent`)
+Powered by **`claude-opus-4-6`** with `"thinking": {"type": "adaptive"}` (extended thinking).
+Selects a language-specific system prompt at runtime:
+
+| Language  | System prompt language              |
+|-----------|-------------------------------------|
+| `qashqai` | Turkish — instructs response in Qashqai Turkic, with Persian/Turkish support |
+| `fa`      | Persian — full Persian response, Qashqai cultural awareness |
+| `tr`      | Turkish — full Turkish response, Qashqai cultural connections |
+| `en`      | English — explains Qashqai context, responds in English |
+
+Uses `anthropic.AsyncAnthropic` (async streaming). Raises `HTTPException` on auth, connection, or API errors.
+
+### Frontend (`app/components/ChatDemo.tsx`)
+
+Reusable `'use client'` React component used on both pages:
+
+- Language selector: `auto` (default), `qashqai`, `fa`, `tr`, `en`
+- Sample phrase chips: click-to-fill
+- `dir="auto"` on textarea and output — handles RTL/LTR automatically
+- ARIA live region on output (`aria-live="polite"`) for accessibility
+- Fetches `POST /chat` with `{ text }` or `{ language, text }`
+
+### Pages
+
+| Route        | File                     | Description                                              |
+|--------------|--------------------------|----------------------------------------------------------|
+| `/`          | `app/app/page.tsx`       | Hero, language grid, pipeline diagram, chat demo         |
+| `/classroom` | `app/classroom/page.tsx` | Phrase card vocabulary table + chat practice (Beta)      |
+
+The Classroom page (`/classroom`) displays 8 Qashqai phrases with English and Persian translations, and uses Qashqai-only sample chips in the chat demo to keep practice on-topic.
+
+## Environment variables
+
+| Variable            | Required | Description                       |
+|---------------------|----------|-----------------------------------|
+| `ANTHROPIC_API_KEY` | Yes      | Used by `ReasoningAgent` to call Claude |
+
+No `.env` management is configured. Set the variable in your shell before starting the backend.
 
 ## Development notes
 
-- **No tests** exist yet. Add `pytest` + `httpx` for backend tests; Jest + React Testing Library for the frontend.
-- **No linting** configured. Recommended: `ruff` for Python, ESLint + Prettier for TypeScript.
-- **No environment variables** are used. API base URL is hardcoded to relative paths (`/chat`, `/detect`).
-- The reasoning agents are placeholders — they echo back the input. Replace `ReasoningAgent.handle()` with real LLM calls when ready.
-- Cultural safety logic in `CulturalGuardianAgent` is minimal. Expand `handle()` with community-defined rules or an LLM-based classifier.
+- **Version**: `0.3.0` (prototype) — shown in UI header and footer.
+- **No tests** — add `pytest` + `httpx` for backend; Jest + React Testing Library for frontend.
+- **No linting** — recommended: `ruff` for Python, ESLint + Prettier for TypeScript.
+- **API base URL** is hardcoded to relative paths (`/chat`, `/detect`) in `ChatDemo.tsx` — relies on Next.js dev proxy or a production reverse proxy.
+- **Cultural Guardian** logic is minimal (empty-text check only). Extend `handle()` with community-validated rules for production use.
+- **Classroom orthography** is illustrative and not yet community-validated — noted in the UI with a beta disclaimer.
