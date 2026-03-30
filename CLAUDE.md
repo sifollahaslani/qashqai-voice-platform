@@ -174,3 +174,48 @@ No `.env` management is configured. Set the variable in your shell before starti
 - **API base URL** is hardcoded to relative paths (`/chat`, `/detect`) in `ChatDemo.tsx` — relies on Next.js dev proxy or a production reverse proxy.
 - **Cultural Guardian** logic is minimal (empty-text check only). Extend `handle()` with community-validated rules for production use.
 - **Classroom orthography** is illustrative and not yet community-validated — noted in the UI with a beta disclaimer.
+
+---
+
+## Claude Code — data pipeline configuration
+
+Work on the language preservation dataset flows through three sequential Claude Code agents. Never skip stages.
+
+```
+/intake  →  /review  →  /process
+(voice-collector)  (cultural-guardian)  (language-processor)
+```
+
+Use `/pipeline-status` at the start of any session to see where everything stands.
+
+### Agents
+
+| Agent | File | Purpose |
+|-------|------|---------|
+| `voice-collector` | `.claude/agents/voice-collector.md` | Speaker intake, consent, metadata, file organization |
+| `cultural-guardian` | `.claude/agents/cultural-guardian.md` | Cultural review, sensitivity classification, annotation |
+| `language-processor` | `.claude/agents/language-processor.md` | Normalization, dataset packaging, quality checks |
+
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/intake` | Start a new speaker intake session |
+| `/review` | Run cultural guardian review |
+| `/process` | Process approved files into dataset |
+| `/pipeline-status` | Show current state of all pipeline files |
+
+### Hooks
+
+Hooks in `hooks/` enforce data governance automatically (wired via `.claude/settings.json`):
+- `pre-data-operation.sh` — warns if no session log exists; blocks restricted content written outside `data/restricted/`
+- `consent-gate.sh` — blocks any Bash command on a speaker ID without confirmed consent
+- `post-session-log.sh` — appends a session entry to `project_register.md` on session end
+
+### Non-negotiable principles
+
+1. Consent comes before data. No processing without confirmed consent.
+2. Cultural Guardian review comes before Language Processor. No exceptions.
+3. Tier 2 (restricted) content stays in `data/restricted/` and goes nowhere without community approval.
+4. Dialect variation is preserved. Never "correct" Qashqai to conform to another standard.
+5. The community's cultural integrity is the purpose of this project, not a constraint on it.

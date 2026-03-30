@@ -1,0 +1,1 @@
+print("QashqAI Voice is running")
