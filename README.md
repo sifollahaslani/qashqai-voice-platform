@@ -244,4 +244,8 @@ See [SECURITY.md](SECURITY.md) for how to report vulnerabilities and how speaker
 
 ## Licence
 
-This project does not yet have a formal open-source licence. All Qashqai language data collected through this platform belongs to the contributing speakers and their communities. Contact the project founder before reproducing or redistributing any content.
+This project is licenced under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** licence. See [LICENSE](LICENSE) for the full text.
+
+You are free to share and adapt this work for non-commercial, academic, and educational purposes, provided you give attribution and distribute any adaptations under the same licence. Commercial use is not permitted without explicit written consent from the project founder.
+
+All Qashqai language data, voice recordings, transcriptions, and cultural content collected through this platform remain the property of the contributing speakers and their communities, and are additionally governed by the consent and withdrawal framework in `06_Data_Governance/`.
