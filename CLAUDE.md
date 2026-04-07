@@ -219,3 +219,16 @@ Hooks in `hooks/` enforce data governance automatically (wired via `.claude/sett
 3. Tier 2 (restricted) content stays in `data/restricted/` and goes nowhere without community approval.
 4. Dialect variation is preserved. Never "correct" Qashqai to conform to another standard.
 5. The community's cultural integrity is the purpose of this project, not a constraint on it.
+6. **All content — platform responses, outreach posts, classroom material, dataset annotations — must be strictly cultural and educational. Never political.**
+
+---
+
+## Project milestones (as of 2026-04-07)
+
+| Date | Milestone |
+|------|-----------|
+| 2026-04-07 | Pitch deck v2 created for Code with Claude London — 13 slides, includes new "Why Now" slide |
+| 2026-04-07 | LDA 2026 Berlin abstract accepted (submission ID: 713903) |
+| 2026-04-07 | Content strategy active: 2 posts/day across 4 languages on 3 platforms |
+| 2026-04-07 | Community Consent Framework v1.0 published |
+| 2026-04-07 | Registered for Code with Claude London — event date: 19 May 2026 |
