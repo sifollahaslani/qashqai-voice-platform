@@ -31,7 +31,8 @@ export default function Home() {
           </a>
           <nav aria-label="Main navigation" style={{ display: 'flex', gap: '1.25rem', marginLeft: 'auto', alignItems: 'center' }}>
             <a href="#pipeline"   style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Pipeline</a>
-            <a href="#classroom"  style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Classroom</a>
+            <a href="/classroom"  style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Classroom</a>
+            <a href="/dictionary" style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Dictionary</a>
             <a href="#ethics"     style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Ethics</a>
             <a href="#milestones" style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Milestones</a>
           </nav>
