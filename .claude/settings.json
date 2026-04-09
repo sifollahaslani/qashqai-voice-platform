@@ -1,31 +1,51 @@
 {
+  "permissions": {
+    "allow": [
+      "Read:*",
+      "Bash:git:*",
+      "Bash:npm:*",
+      "Bash:node:*",
+      "Bash:python:*",
+      "Bash:uvicorn:*",
+      "Bash:npx:*"
+    ],
+    "deny": [
+      "Bash:rm:-rf /*",
+      "Bash:sudo:*"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash hooks/pre-data-operation.sh"
-          }
-        ]
-      },
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash hooks/consent-gate.sh"
+            "command": ".claude/hooks/PreToolUse.sh",
+            "timeout": 5
           }
         ]
       }
     ],
-    "Stop": [
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/PostToolUse.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash hooks/post-session-log.sh"
+            "command": ".claude/hooks/Notification.sh",
+            "timeout": 3
           }
         ]
       }
