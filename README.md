@@ -249,3 +249,16 @@ This project is licenced under the **Creative Commons Attribution-NonCommercial-
 You are free to share and adapt this work for non-commercial, academic, and educational purposes, provided you give attribution and distribute any adaptations under the same licence. Commercial use is not permitted without explicit written consent from the project founder.
 
 All Qashqai language data, voice recordings, transcriptions, and cultural content collected through this platform remain the property of the contributing speakers and their communities, and are additionally governed by the consent and withdrawal framework in `06_Data_Governance/`.
+
+---
+
+## Core Strategic Documents
+
+QashqAI Voice is not only a technical platform. It is a human-governed cultural AI infrastructure for endangered languages.
+
+To understand the project's global vision, ethical foundations, and unique positioning, see:
+
+- [QashqAI Voice Global Manifesto](./QashqAI-Voice-Global-Manifesto.md)
+- [QashqAI Voice Global Uniqueness Framework](./QashqAI-Voice-Global-Uniqueness-Framework.md)
+
+These documents explain why QashqAI Voice is designed not merely as a language preservation tool, but as a replicable global model for community consent, cultural data sovereignty, human oversight, and responsible AI for endangered languages.
