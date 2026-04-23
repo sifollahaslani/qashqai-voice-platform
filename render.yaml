@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: qashqai-voice-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://qashqaivoice.com,https://www.qashqaivoice.com
+      - key: PYTHON_VERSION
+        value: "3.11.9"
