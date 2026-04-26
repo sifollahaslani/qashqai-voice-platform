@@ -4,7 +4,7 @@ A cultural–technology initiative preserving the Qashqai language — an endang
 
 The platform routes multilingual messages through a three-agent pipeline (language detection → cultural safety check → language-aware reasoning) and provides a structured, consent-based pathway for collecting and archiving Qashqai voice data.
 
-**Version:** 0.3.0 (prototype) · **Founder:** Siefollah Aslani
+**Version:** 0.4.0 (prototype) · **Founder:** Siefollah Aslani
 
 ---
 

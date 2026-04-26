@@ -168,7 +168,7 @@ No `.env` management is configured. Set the variable in your shell before starti
 
 ## Development notes
 
-- **Version**: `0.3.0` (prototype) — shown in UI header and footer.
+- **Version**: `0.4.0` (prototype) — shown in UI header and footer.
 - **No tests** — add `pytest` + `httpx` for backend; Jest + React Testing Library for frontend.
 - **No linting** — recommended: `ruff` for Python, ESLint + Prettier for TypeScript.
 - **API base URL** is hardcoded to relative paths (`/chat`, `/detect`) in `ChatDemo.tsx` — relies on Next.js dev proxy or a production reverse proxy.
