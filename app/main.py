@@ -87,12 +87,23 @@ _ENTRIES_FILE = _DATA_DIR / "entries.json"
 
 
 def _read_entries() -> List[dict]:
+    """Return stored entries, or [] when the file does not exist yet.
+
+    Raises RuntimeError if the file exists but cannot be read or parsed,
+    so callers fail fast instead of silently overwriting good data.
+    """
     if not _ENTRIES_FILE.exists():
         return []
     try:
         return json.loads(_ENTRIES_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"entries.json is corrupt (JSON parse error): {exc}"
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"entries.json could not be read (OS error): {exc}"
+        ) from exc
 
 
 def _write_entries(entries: List[dict]) -> None:
@@ -330,8 +341,11 @@ async def chat_api(msg: Message):
 
 @app.post("/entries", response_model=LinguisticEntry, status_code=201)
 def create_entry(payload: LinguisticEntryCreate):
+    try:
+        entries = _read_entries()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     entry = LinguisticEntry(id=str(uuid.uuid4()), **payload.model_dump())
-    entries = _read_entries()
     entries.append(entry.model_dump())
     _write_entries(entries)
     return entry
@@ -339,4 +353,7 @@ def create_entry(payload: LinguisticEntryCreate):
 
 @app.get("/entries", response_model=List[LinguisticEntry])
 def list_entries():
-    return _read_entries()
+    try:
+        return _read_entries()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
