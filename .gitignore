@@ -1,3 +1,5 @@
+
+
 # Vercel
 .vercel
 .env*.local
@@ -19,3 +21,24 @@ app/node_modules/
 # OS
 .DS_Store
 Thumbs.db
+# ====================================================
+# QashqAI Voice — Cleanup additions (2026-04-30)
+# ====================================================
+node_modules/
+data/
+pitch-deck-london-2026*.pptx
+pitch-deck.js
+slides_extract.json
+*.backup
+*.bak
+LONDON_NARRATIVE_2MIN.md
+LONDON_ONE_PAGER.md
+.next/
+out/
+dist/
+build/
+.vscode/
+.idea/
+*.log
+*_BACKUP.md
+_BACKUP.
