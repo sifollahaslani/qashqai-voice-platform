@@ -426,6 +426,14 @@ img, svg {
   font-size: var(--text-sm);
   color: var(--color-error);
 }
+.metadata-success {
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-success);
+}
 
 /* ---------- Footer ---------- */
 .site-footer {

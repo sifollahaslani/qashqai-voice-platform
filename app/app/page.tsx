@@ -33,6 +33,7 @@ export default function Home() {
             <a href="#pipeline"   style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Pipeline</a>
             <a href="/classroom"  style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Classroom</a>
             <a href="/dictionary" style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Dictionary</a>
+            <a href="/contribute" style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Contribute</a>
             <a href="#ethics"     style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Ethics</a>
             <a href="#milestones" style={{ fontSize: '0.875rem', fontWeight: 600, color: T.muted, textDecoration: 'none' }}>Milestones</a>
           </nav>
