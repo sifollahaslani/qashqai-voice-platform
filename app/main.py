@@ -37,7 +37,6 @@ class DetectResult(BaseModel):
 
 ContentType = Literal["word", "sentence", "story", "song", "proverb", "oral_history"]
 ConsentStatus = Literal["public", "restricted", "archive_only", "pending"]
-AiUsagePermission = Literal["allowed", "disallowed", "review_required"]
 VisibilityStatus = Literal["public", "internal", "blocked"]
 
 
@@ -51,7 +50,11 @@ class LinguisticEntryCreate(BaseModel):
     recording_date: Optional[str] = None
     collector_name: Optional[str] = None
     consent_status: ConsentStatus
-    ai_usage_permission: AiUsagePermission
+    community_consent_status: ConsentStatus = "pending"
+    consent_withdrawable_until: Optional[str] = None
+    ai_training_allowed: bool = False
+    ai_inference_allowed: bool = False
+    ai_generation_allowed: bool = False
     visibility_status: VisibilityStatus
     notes: Optional[str] = None
 
@@ -86,7 +89,10 @@ _ENTRIES_FILE = _DATA_DIR / "entries.json"
 def _read_entries() -> List[dict]:
     if not _ENTRIES_FILE.exists():
         return []
-    return json.loads(_ENTRIES_FILE.read_text(encoding="utf-8"))
+    try:
+        return json.loads(_ENTRIES_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
 
 
 def _write_entries(entries: List[dict]) -> None:
