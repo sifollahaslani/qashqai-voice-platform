@@ -18,12 +18,6 @@ const CONSENT_OPTIONS = [
   { value: 'pending', label: 'Pending' },
 ] as const
 
-const AI_USAGE_OPTIONS = [
-  { value: 'allowed', label: 'Allowed' },
-  { value: 'disallowed', label: 'Disallowed' },
-  { value: 'review_required', label: 'Review Required' },
-] as const
-
 const VISIBILITY_OPTIONS = [
   { value: 'public', label: 'Public' },
   { value: 'internal', label: 'Internal' },
@@ -47,7 +41,11 @@ interface FormData {
   recording_date: string
   collector_name: string
   consent_status: string
-  ai_usage_permission: string
+  community_consent_status: string
+  consent_withdrawable_until: string
+  ai_training_allowed: boolean
+  ai_inference_allowed: boolean
+  ai_generation_allowed: boolean
   visibility_status: string
   notes: string
 }
@@ -62,7 +60,11 @@ const INITIAL: FormData = {
   recording_date: '',
   collector_name: '',
   consent_status: 'pending',
-  ai_usage_permission: 'review_required',
+  community_consent_status: 'pending',
+  consent_withdrawable_until: '',
+  ai_training_allowed: false,
+  ai_inference_allowed: false,
+  ai_generation_allowed: false,
   visibility_status: 'internal',
   notes: '',
 }
@@ -75,6 +77,12 @@ export default function MetadataForm() {
 
   function update(field: keyof FormData, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
+    setErrors([])
+    setSuccess(null)
+  }
+
+  function toggle(field: keyof FormData) {
+    setForm(prev => ({ ...prev, [field]: !prev[field] }))
     setErrors([])
     setSuccess(null)
   }
@@ -105,10 +113,11 @@ export default function MetadataForm() {
     setSuccess(null)
 
     try {
-      const payload: Record<string, string | null> = { ...form }
+      const payload: Record<string, string | boolean | null> = { ...form }
       if (!payload.dialect) payload.dialect = null
       if (!payload.speaker_display_name) payload.speaker_display_name = null
       if (!payload.recording_date) payload.recording_date = null
+      if (!payload.consent_withdrawable_until) payload.consent_withdrawable_until = null
       if (!payload.collector_name) payload.collector_name = null
       if (!payload.notes) payload.notes = null
 
@@ -257,7 +266,7 @@ export default function MetadataForm() {
         </div>
       </div>
 
-      {/* Consent + AI usage + Visibility */}
+      {/* Consent + Community consent + Withdrawable until */}
       <div className="form-row">
         <div className="form-group">
           <label htmlFor="meta-consent" className="form-label">Consent Status *</label>
@@ -271,27 +280,70 @@ export default function MetadataForm() {
           </select>
         </div>
         <div className="form-group">
-          <label htmlFor="meta-ai-usage" className="form-label">AI Usage Permission *</label>
+          <label htmlFor="meta-community-consent" className="form-label">Community Consent Status *</label>
           <select
-            id="meta-ai-usage"
+            id="meta-community-consent"
             className="form-select"
-            value={form.ai_usage_permission}
-            onChange={e => update('ai_usage_permission', e.target.value)}
+            value={form.community_consent_status}
+            onChange={e => update('community_consent_status', e.target.value)}
           >
-            {AI_USAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {CONSENT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div className="form-group">
-          <label htmlFor="meta-visibility" className="form-label">Visibility *</label>
-          <select
-            id="meta-visibility"
+          <label htmlFor="meta-withdrawable-until" className="form-label">Consent Withdrawable Until</label>
+          <input
+            id="meta-withdrawable-until"
             className="form-select"
-            value={form.visibility_status}
-            onChange={e => update('visibility_status', e.target.value)}
-          >
-            {VISIBILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+            type="date"
+            value={form.consent_withdrawable_until}
+            onChange={e => update('consent_withdrawable_until', e.target.value)}
+          />
         </div>
+      </div>
+
+      {/* AI permissions */}
+      <div className="form-group">
+        <p className="form-label" style={{ marginBottom: '0.5rem' }}>AI Usage Permissions</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.ai_training_allowed}
+              onChange={() => toggle('ai_training_allowed')}
+            />
+            Allow AI training on this item
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.ai_inference_allowed}
+              onChange={() => toggle('ai_inference_allowed')}
+            />
+            Allow AI inference (retrieval / search)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.ai_generation_allowed}
+              onChange={() => toggle('ai_generation_allowed')}
+            />
+            Allow AI generation (responses quoting this item)
+          </label>
+        </div>
+      </div>
+
+      {/* Visibility */}
+      <div className="form-group">
+        <label htmlFor="meta-visibility" className="form-label">Visibility *</label>
+        <select
+          id="meta-visibility"
+          className="form-select"
+          value={form.visibility_status}
+          onChange={e => update('visibility_status', e.target.value)}
+        >
+          {VISIBILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       </div>
 
       {/* Notes */}
