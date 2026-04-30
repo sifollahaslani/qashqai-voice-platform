@@ -1,9 +1,13 @@
+import json
 import os
+import uuid
+from pathlib import Path
 from typing import Literal, List, Optional
+
 import anthropic
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # ---------- Data models ----------
@@ -27,6 +31,70 @@ class ChatResult(BaseModel):
 class DetectResult(BaseModel):
     language: Literal["qashqai", "fa", "tr", "en"]
     confidence: Literal["low", "medium", "high"]
+
+
+# ---------- Linguistic entry models ----------
+
+ContentType = Literal["word", "sentence", "story", "song", "proverb", "oral_history"]
+ConsentStatus = Literal["public", "restricted", "archive_only", "pending"]
+AiUsagePermission = Literal["allowed", "disallowed", "review_required"]
+VisibilityStatus = Literal["public", "internal", "blocked"]
+
+
+class LinguisticEntryCreate(BaseModel):
+    title: str
+    content_type: ContentType
+    language: str
+    dialect: Optional[str] = None
+    speaker_id: str
+    speaker_display_name: Optional[str] = None
+    recording_date: Optional[str] = None
+    collector_name: Optional[str] = None
+    consent_status: ConsentStatus
+    ai_usage_permission: AiUsagePermission
+    visibility_status: VisibilityStatus
+    notes: Optional[str] = None
+
+    @field_validator("title", "language", "speaker_id")
+    @classmethod
+    def must_not_be_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Field must not be blank")
+        return v.strip()
+
+    @field_validator("visibility_status")
+    @classmethod
+    def check_consent_visibility(cls, v: str, info) -> str:
+        consent = info.data.get("consent_status")
+        if consent == "pending" and v == "public":
+            raise ValueError("Visibility cannot be public when consent is pending")
+        if consent == "archive_only" and v == "public":
+            raise ValueError("Visibility cannot be public when consent is archive_only")
+        return v
+
+
+class LinguisticEntry(LinguisticEntryCreate):
+    id: str
+
+
+# ---------- Entry storage ----------
+
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_ENTRIES_FILE = _DATA_DIR / "entries.json"
+
+
+def _read_entries() -> List[dict]:
+    if not _ENTRIES_FILE.exists():
+        return []
+    return json.loads(_ENTRIES_FILE.read_text(encoding="utf-8"))
+
+
+def _write_entries(entries: List[dict]) -> None:
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _ENTRIES_FILE.write_text(
+        json.dumps(entries, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 # ---------- Language detection ----------
@@ -250,3 +318,19 @@ def detect_api(msg: Message):
 @app.post("/chat", response_model=ChatResult)
 async def chat_api(msg: Message):
     return await orchestrator.run(msg)
+
+
+# ---------- Linguistic entry endpoints ----------
+
+@app.post("/entries", response_model=LinguisticEntry, status_code=201)
+def create_entry(payload: LinguisticEntryCreate):
+    entry = LinguisticEntry(id=str(uuid.uuid4()), **payload.model_dump())
+    entries = _read_entries()
+    entries.append(entry.model_dump())
+    _write_entries(entries)
+    return entry
+
+
+@app.get("/entries", response_model=List[LinguisticEntry])
+def list_entries():
+    return _read_entries()

@@ -10,6 +10,10 @@ const nextConfig = {
         source: '/detect',
         destination: 'http://localhost:8000/detect',
       },
+      {
+        source: '/entries',
+        destination: 'http://localhost:8000/entries',
+      },
     ]
   },
 }
