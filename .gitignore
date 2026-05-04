@@ -41,4 +41,6 @@ build/
 .idea/
 *.log
 *_BACKUP.md
-_BACKUP.project_register.md
+_BACKUP.*
+project_register.md
+project_register*.md
