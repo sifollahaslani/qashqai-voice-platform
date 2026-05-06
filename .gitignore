@@ -27,7 +27,6 @@ Thumbs.db
 node_modules/
 data/
 pitch-deck-london-2026*.pptx
-pitch-deck.js
 slides_extract.json
 *.backup
 *.bak
