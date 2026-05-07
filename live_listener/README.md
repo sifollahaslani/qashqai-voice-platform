@@ -108,19 +108,37 @@ ANTHROPIC_MODEL=claude-opus-4-7
 
 ## اجرا / Running
 
-```bash
-# From the live_listener/ directory
-python src/live_listener.py
-```
+### حالت‌های اجرا / Modes
 
-The tool will:
-1. Validate environment variables
-2. Display the consent gate (Persian)
-3. Ask for explicit confirmation before any audio is captured
-4. Begin recording in 20-second chunks
-5. Print JSON analysis after each chunk
+| Mode | Command | When to use |
+|---|---|---|
+| Consent gate test | `python src/live_listener.py --dry-run-consent` | Verify consent prompt works. No mic, no API. |
+| Smoke test (default) | `python src/live_listener.py` | English pipeline test. Your voice only. |
+| Fieldwork + ZDR | `python src/live_listener.py --fieldwork --zdr-confirmed` | Father's voice. ZDR must be active on OpenAI org. |
+| Fieldwork + consent override | `python src/live_listener.py --fieldwork --consent-override` | Father's voice. Explicit typed consent, no ZDR. |
+| Fieldwork + local STT | `python src/live_listener.py --fieldwork --local-stt` | Father's voice. Audio never leaves device. (TODO) |
 
-**توقف / Stop:** `Ctrl+C` — buffer is cleared, no data persisted.
+### حالت کار میدانی / Fieldwork Gate
+
+**`--fieldwork` بدون گوینده بومی استفاده نشود.**
+Do not use `--fieldwork` without the primary speaker present and consented.
+
+`--fieldwork` alone will exit with code 1. One of the following sub-flags is required:
+
+**`--zdr-confirmed`** — Assert that Zero Data Retention is active on your OpenAI organisation.
+The tool will print a verification reminder and ask you to confirm before proceeding.
+Check: `platform.openai.com → Settings → Organization → General`
+
+**`--local-stt`** — Route audio through local Whisper. Audio never leaves the device.
+Not yet implemented — exits with TODO message.
+
+**`--consent-override`** — Explicit documented consent accepting external processing without ZDR.
+You must type the following sentence exactly:
+> `I accept that audio leaves the device and is processed by OpenAI without ZDR`
+
+### توقف / Stop
+
+`Ctrl+C` — transcript buffer is cleared immediately, no data persisted.
 
 ---
 

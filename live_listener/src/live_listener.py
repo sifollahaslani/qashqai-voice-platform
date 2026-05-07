@@ -361,27 +361,144 @@ def run_smoke_test(openai_client: OpenAI) -> None:
         print("[smoke-test] Done.\n")
 
 
+CONSENT_OVERRIDE_SENTENCE = (
+    "I accept that audio leaves the device and is processed by OpenAI without ZDR"
+)
+
+
+def enforce_fieldwork_gate(flags: set[str]) -> None:
+    """
+    Hard gate for fieldwork mode — must be passed before any father/Qashqai session.
+
+    Requires exactly one of:
+        --zdr-confirmed     User asserts Zero Data Retention is active on their
+                            OpenAI organisation. Tool prints verification reminder
+                            and asks for confirmation before proceeding.
+        --local-stt         Switch to local Whisper (not yet implemented).
+                            Exits with TODO message.
+        --consent-override  User types the full consent sentence accepting that
+                            audio leaves the device without ZDR.
+
+    Args:
+        flags: Set of CLI flags present in sys.argv.
+
+    Raises:
+        SystemExit(1): If none of the required sub-flags are provided, or if
+                       the user fails the confirmation step.
+    """
+    has_zdr = "--zdr-confirmed" in flags
+    has_local = "--local-stt" in flags
+    has_override = "--consent-override" in flags
+
+    if not (has_zdr or has_local or has_override):
+        print("\n" + "=" * 60)
+        print("  FIELDWORK GATE — حفاظت از حریم خصوصی گوینده")
+        print("=" * 60)
+        print()
+        print("  حالت کار میدانی نیاز به یکی از گزینه‌های زیر دارد:")
+        print("  Fieldwork mode requires one of the following flags:")
+        print()
+        print("  --zdr-confirmed")
+        print("      Zero Data Retention is active on your OpenAI organisation.")
+        print("      صدای پدر بدون ذخیره‌سازی پردازش می‌شود.")
+        print()
+        print("  --local-stt")
+        print("      Use local Whisper — audio never leaves the device.")
+        print("      صدا هرگز دستگاه را ترک نمی‌کند. (در دست توسعه)")
+        print()
+        print("  --consent-override")
+        print("      Explicit documented consent accepting external API processing.")
+        print("      رضایت مستند برای پردازش توسط API خارجی بدون ZDR.")
+        print()
+        print("  Without one of these, fieldwork cannot begin.")
+        print("  بدون یکی از این گزینه‌ها، کار میدانی امکان‌پذیر نیست.")
+        print("=" * 60 + "\n")
+        sys.exit(1)
+
+    if has_local:
+        print("\n" + "=" * 60)
+        print("  --local-stt: TODO — Local Whisper not yet implemented.")
+        print("  این قابلیت هنوز پیاده‌سازی نشده است.")
+        print("  صدا هرگز دستگاه را ترک نخواهد کرد — در نسخه بعدی.")
+        print("=" * 60 + "\n")
+        sys.exit(1)
+
+    if has_zdr:
+        print("\n" + "=" * 60)
+        print("  --zdr-confirmed: Zero Data Retention verification")
+        print("=" * 60)
+        print()
+        print("  ⚠️  You have asserted that ZDR is active on your OpenAI organisation.")
+        print("  Before continuing, verify this is true:")
+        print()
+        print("  1. Go to: https://platform.openai.com/settings/organization/general")
+        print("  2. Confirm Zero Data Retention is listed as enabled.")
+        print("  3. If unsure, stop now and contact OpenAI support.")
+        print()
+        print("  If ZDR is NOT active, speaker audio will be retained")
+        print("  by OpenAI for up to 30 days.")
+        print()
+        print("  آیا ZDR را در داشبورد OpenAI تأیید کرده‌اید؟ (y / n): ", end="")
+        try:
+            answer = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  خروج — تأیید ZDR دریافت نشد.\n")
+            sys.exit(1)
+        if answer != "y":
+            print("\n  خروج — بدون تأیید ZDR، کار میدانی انجام نمی‌شود.\n")
+            sys.exit(1)
+        print("\n  ✅ ZDR تأیید شد. ادامه می‌دهیم...\n")
+        return
+
+    if has_override:
+        print("\n" + "=" * 60)
+        print("  --consent-override: Explicit consent required")
+        print("=" * 60)
+        print()
+        print("  ⚠️  Zero Data Retention is NOT confirmed.")
+        print("  Audio will be sent to OpenAI and may be retained for up to 30 days.")
+        print()
+        print("  To proceed, type the following sentence exactly:")
+        print()
+        print(f"  \"{CONSENT_OVERRIDE_SENTENCE}\"")
+        print()
+        print("  > ", end="")
+        try:
+            answer = input().strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  خروج — رضایت صریح دریافت نشد.\n")
+            sys.exit(1)
+        if answer != CONSENT_OVERRIDE_SENTENCE:
+            print("\n  ❌ متن وارد شده مطابقت ندارد. خروج.\n")
+            sys.exit(1)
+        print("\n  ✅ رضایت صریح ثبت شد. ادامه می‌دهیم...\n")
+        return
+
+
 def main() -> None:
     """Application entry point.
 
     Flags:
-        --dry-run-consent   Run only the consent gate, then exit.
-                            No mic access, no API calls, no audio capture.
-        --smoke-test        Record 7 seconds, transcribe, print result.
-                            No Claude call. No fieldwork data.
+        --dry-run-consent    Run only the consent gate, then exit.
+                             No mic access, no API calls, no audio capture.
+        --smoke-test         Record 7 seconds, transcribe, print result.
+                             No Claude call. No fieldwork data. (default mode)
+        --fieldwork          Enable real fieldwork mode (father's voice, Qashqai).
+                             Requires one of:
+                               --zdr-confirmed    ZDR active on OpenAI org
+                               --local-stt        Local Whisper (TODO)
+                               --consent-override Typed explicit consent
     """
-    dry_run_consent = "--dry-run-consent" in sys.argv
-    smoke_test = "--smoke-test" in sys.argv
+    flags = set(sys.argv[1:])
 
-    if dry_run_consent:
-        # Only test the consent gate — nothing else initialised.
+    if "--dry-run-consent" in flags:
         print("\n[dry-run-consent] آزمایش دروازه رضایت — بدون میکروفون یا API")
         request_consent()
         print("[dry-run-consent] دروازه رضایت با موفقیت تست شد. خروج.\n")
         sys.exit(0)
 
-    if smoke_test:
-        # Smoke test only needs OPENAI_API_KEY — skip Anthropic validation.
+    if "--fieldwork" not in flags:
+        # Default: smoke-test mode. Requires only OPENAI_API_KEY.
         load_dotenv()
         openai_key = os.environ.get("OPENAI_API_KEY", "")
         if not openai_key:
@@ -395,6 +512,9 @@ def main() -> None:
             sys.exit(1)
         run_smoke_test(openai_client)
         sys.exit(0)
+
+    # --- Fieldwork mode ---
+    enforce_fieldwork_gate(flags)
 
     openai_key, anthropic_key, model = load_env()
 
@@ -412,7 +532,6 @@ def main() -> None:
         print(f"\n❌ {exc}\n")
         sys.exit(1)
 
-    # Verify microphone access before entering the main loop
     try:
         sd.check_input_settings(samplerate=SAMPLE_RATE, channels=CHANNELS)
     except sd.PortAudioError as exc:

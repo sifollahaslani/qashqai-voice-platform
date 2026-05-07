@@ -4,6 +4,45 @@
 
 ---
 
+## Data Routing — What Happens to the Audio
+
+Before any fieldwork session, you must understand where speaker audio goes.
+
+### Default behaviour (no `--fieldwork` flag)
+
+The tool runs in **smoke-test mode**. Your own voice (English test sentence) is used. Audio is sent to OpenAI Whisper API over HTTPS. Father's voice is never involved.
+
+### Fieldwork mode (`--fieldwork`)
+
+Father's voice is captured and sent to OpenAI Whisper API unless local STT is used. OpenAI's default data retention is **up to 30 days**. Without Zero Data Retention (ZDR), speaker audio may be stored on OpenAI servers.
+
+**The tool enforces a hard gate. `--fieldwork` alone will not run.**
+One of the following sub-flags is required:
+
+| Flag | Meaning | Audio destination |
+|---|---|---|
+| `--zdr-confirmed` | ZDR is active on your OpenAI org | OpenAI — not retained (ZDR) |
+| `--local-stt` | Local Whisper (TODO) | Stays on device — never sent |
+| `--consent-override` | Typed explicit consent, no ZDR | OpenAI — may be retained 30 days |
+
+### Zero Data Retention (ZDR)
+
+ZDR is a contractual arrangement with OpenAI. It is **not enabled by default**.
+To check or request it:
+1. Go to `platform.openai.com → Settings → Organization → General`
+2. Look for Zero Data Retention status
+3. If not active, contact OpenAI sales or use `--local-stt` / `--consent-override`
+
+### What the `--consent-override` flag requires
+
+If ZDR is not confirmed and local STT is not available, you must type the following sentence exactly at the prompt before fieldwork begins:
+
+> `I accept that audio leaves the device and is processed by OpenAI without ZDR`
+
+This is a documented, explicit consent record for the session log.
+
+---
+
 ## Purpose
 
 This protocol governs the use of the Live Listener tool during fieldwork sessions with the primary speaker. It is a binding operational requirement, not a suggestion. No recording session may begin without completing this checklist.
