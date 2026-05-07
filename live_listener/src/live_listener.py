@@ -22,6 +22,13 @@ import sys
 import wave
 import collections
 
+# Force UTF-8 output on Windows (German locale defaults to cp1252,
+# which cannot encode Arabic-script characters used in terminal output).
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8")
+
 import numpy as np
 import sounddevice as sd
 from dotenv import load_dotenv
@@ -299,7 +306,21 @@ def run_listener(openai_client: OpenAI, anthropic_client, model: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Application entry point."""
+    """Application entry point.
+
+    Flags:
+        --dry-run-consent   Run only the consent gate, then exit.
+                            No mic access, no API calls, no audio capture.
+    """
+    dry_run_consent = "--dry-run-consent" in sys.argv
+
+    if dry_run_consent:
+        # Only test the consent gate — nothing else initialised.
+        print("\n[dry-run-consent] آزمایش دروازه رضایت — بدون میکروفون یا API")
+        request_consent()
+        print("[dry-run-consent] دروازه رضایت با موفقیت تست شد. خروج.\n")
+        sys.exit(0)
+
     openai_key, anthropic_key, model = load_env()
 
     request_consent()
