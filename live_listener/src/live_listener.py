@@ -305,20 +305,95 @@ def run_listener(openai_client: OpenAI, anthropic_client, model: str) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def run_smoke_test(openai_client: OpenAI) -> None:
+    """
+    Smoke test: record 7 seconds, transcribe via Whisper, print result.
+    No Claude call. No rolling buffer. No fieldwork data.
+
+    Args:
+        openai_client: Authenticated OpenAI client.
+    """
+    smoke_seconds = 7
+    frames: np.ndarray | None = None
+    transcript_buffer: collections.deque[str] = collections.deque(maxlen=BUFFER_MAX_CHUNKS)
+
+    print("\n[smoke-test] Recording for 7 seconds — speak a short English test sentence.")
+    print("[smoke-test] Example: \"this is a microphone test, one two three\"\n")
+
+    try:
+        frames = sd.rec(
+            frames=smoke_seconds * SAMPLE_RATE,
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype=DTYPE,
+        )
+        sd.wait()
+
+        audio_chunk = frames.flatten()
+        print("[smoke-test] Transcribing via POST https://api.openai.com/v1/audio/transcriptions ...")
+
+        try:
+            transcript = transcribe_chunk(openai_client, audio_chunk)
+        finally:
+            # Discard raw audio immediately regardless of success or failure
+            del audio_chunk
+            frames = None
+
+        print(f"\n[smoke-test] Transcript: \"{transcript}\"\n")
+        transcript_buffer.append(transcript)
+
+    except AuthenticationError:
+        print("[smoke-test] ERROR: OPENAI_API_KEY is invalid.")
+    except APIConnectionError:
+        print("[smoke-test] ERROR: Network failure reaching OpenAI.")
+    except APIStatusError as exc:
+        print(f"[smoke-test] ERROR: OpenAI API returned {exc.status_code}.")
+    except sd.PortAudioError as exc:
+        print(f"[smoke-test] ERROR: Microphone not accessible: {exc}")
+    except KeyboardInterrupt:
+        print("\n[smoke-test] Interrupted by user.")
+    finally:
+        # Guaranteed cleanup
+        transcript_buffer.clear()
+        frames = None
+        print("[smoke-test] Buffer cleared.")
+        print("[smoke-test] No audio files written.")
+        print("[smoke-test] Done.\n")
+
+
 def main() -> None:
     """Application entry point.
 
     Flags:
         --dry-run-consent   Run only the consent gate, then exit.
                             No mic access, no API calls, no audio capture.
+        --smoke-test        Record 7 seconds, transcribe, print result.
+                            No Claude call. No fieldwork data.
     """
     dry_run_consent = "--dry-run-consent" in sys.argv
+    smoke_test = "--smoke-test" in sys.argv
 
     if dry_run_consent:
         # Only test the consent gate — nothing else initialised.
         print("\n[dry-run-consent] آزمایش دروازه رضایت — بدون میکروفون یا API")
         request_consent()
         print("[dry-run-consent] دروازه رضایت با موفقیت تست شد. خروج.\n")
+        sys.exit(0)
+
+    if smoke_test:
+        # Smoke test only needs OPENAI_API_KEY — skip Anthropic validation.
+        load_dotenv()
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if not openai_key:
+            print("\n❌ OPENAI_API_KEY is not set. Copy .env.example to .env and fill it in.\n")
+            sys.exit(1)
+        request_consent()
+        try:
+            openai_client = OpenAI(api_key=openai_key)
+        except Exception as exc:
+            print(f"\n❌ Error creating OpenAI client: {exc}\n")
+            sys.exit(1)
+        run_smoke_test(openai_client)
         sys.exit(0)
 
     openai_key, anthropic_key, model = load_env()
