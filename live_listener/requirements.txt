@@ -1,0 +1,6 @@
+sounddevice
+numpy
+openai
+anthropic
+python-dotenv
+faster-whisper
