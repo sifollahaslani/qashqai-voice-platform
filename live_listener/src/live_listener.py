@@ -4,16 +4,22 @@ live_listener.py — QashqAI Live Listener main loop.
 Privacy contract (enforced in this file):
   - NO audio written to disk, ever.
   - Raw audio exists only in memory for the minimum time needed for
-    transcription (one 20-second chunk at a time).
-  - The rolling transcript buffer holds at most 3 chunks (~60 seconds).
+    transcription (one chunk at a time).
+  - The rolling transcript buffer holds at most 3 chunks.
   - Both the audio chunk and the buffer are explicitly cleared on exit.
+  - In --local-stt mode, audio never leaves the device. Transcript text
+    (not audio) is saved to transcripts/transcript_YYYYMMDD_HHMMSS.txt.
 
 Usage:
-    python src/live_listener.py
+    python src/live_listener.py                          # smoke-test (default)
+    python src/live_listener.py --fieldwork --local-stt  # local STT, no API
+    python src/live_listener.py --fieldwork --zdr-confirmed
+    python src/live_listener.py --fieldwork --consent-override
 
 Requires:
-    OPENAI_API_KEY, ANTHROPIC_API_KEY, ANTHROPIC_MODEL in environment
-    (copy .env.example to .env and fill in your keys).
+    ANTHROPIC_API_KEY, ANTHROPIC_MODEL always.
+    OPENAI_API_KEY only for non-local-stt fieldwork and smoke-test.
+    (copy .env.example to .env and fill in your keys)
 """
 
 import io
@@ -21,6 +27,8 @@ import os
 import sys
 import wave
 import collections
+import datetime
+import pathlib
 
 # Force UTF-8 output on Windows (German locale defaults to cp1252,
 # which cannot encode Arabic-script characters used in terminal output).
@@ -45,9 +53,11 @@ from analyzer import get_anthropic_client, analyze_transcript, format_analysis_f
 
 SAMPLE_RATE = 16_000        # Hz — Whisper works well at 16 kHz
 CHANNELS = 1                # Mono
-CHUNK_SECONDS = 20          # Duration of each audio chunk
-BUFFER_MAX_CHUNKS = 3       # Rolling transcript buffer size (~60 seconds)
+CHUNK_SECONDS = 20          # Duration of each audio chunk (OpenAI STT path)
+LOCAL_CHUNK_SECONDS = 10    # Duration for local STT — shorter, more responsive
+BUFFER_MAX_CHUNKS = 3       # Rolling transcript buffer size
 DTYPE = "float32"           # sounddevice capture format
+TRANSCRIPTS_DIR = pathlib.Path("transcripts")   # Local STT session logs
 
 # ---------------------------------------------------------------------------
 # Environment loading
@@ -302,6 +312,151 @@ def run_listener(openai_client: OpenAI, anthropic_client, model: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Local STT — faster-whisper (audio never leaves device)
+# ---------------------------------------------------------------------------
+
+def transcribe_chunk_local(whisper_model, frames: np.ndarray) -> tuple[str, str]:
+    """
+    Transcribe audio using a local faster-whisper model.
+
+    Audio is passed as a numpy float32 array directly — no BytesIO, no disk
+    write, no network call. faster-whisper accepts numpy arrays natively.
+
+    Args:
+        whisper_model: Loaded faster_whisper.WhisperModel instance.
+        frames: 1-D float32 numpy array of audio samples in [-1.0, 1.0].
+
+    Returns:
+        Tuple of (transcript_text, detected_language_code).
+        transcript_text is empty string if nothing was detected.
+    """
+    segments_gen, info = whisper_model.transcribe(
+        frames,
+        language=None,      # auto-detect
+        vad_filter=True,    # skip silent sections
+        beam_size=5,
+    )
+    # Consume the lazy generator; each segment has .text, .start, .end
+    segments = list(segments_gen)
+    text = " ".join(seg.text.strip() for seg in segments).strip()
+    return text, info.language
+
+
+def run_local_listener(whisper_model, anthropic_client, model: str) -> None:
+    """
+    Fieldwork loop using local faster-whisper STT.
+
+    Audio is captured in 10-second chunks, transcribed locally, and
+    appended to a rolling in-memory buffer. Each chunk is also written
+    to a timestamped transcript file in transcripts/. Raw audio is
+    discarded immediately after transcription.
+
+    No audio ever leaves the device in this mode.
+
+    Args:
+        whisper_model: Loaded faster_whisper.WhisperModel instance.
+        anthropic_client: Authenticated Anthropic client.
+        model: Claude model ID string.
+    """
+    transcript_buffer: collections.deque[str] = collections.deque(maxlen=BUFFER_MAX_CHUNKS)
+    chunk_count = 0
+    current_frames: np.ndarray | None = None
+    transcript_file = None
+
+    # Prepare transcript file
+    TRANSCRIPTS_DIR.mkdir(exist_ok=True)
+    session_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    transcript_path = TRANSCRIPTS_DIR / f"transcript_{session_ts}.txt"
+
+    print(f"  📂  رونوشت جلسه: {transcript_path}")
+    print("  🎙️  [local-stt] در حال گوش دادن... (Ctrl+C برای توقف)\n")
+
+    try:
+        transcript_file = open(transcript_path, "w", encoding="utf-8")
+        transcript_file.write("# QashqAI Live Listener — Local STT Session\n")
+        transcript_file.write(f"# Started: {datetime.datetime.now().isoformat()}\n")
+        transcript_file.write("# Model: faster-whisper small / cpu / int8\n")
+        transcript_file.write("# Audio: captured locally, never transmitted\n\n")
+
+        while True:
+            print(f"  ⏺  بخش {chunk_count + 1} — در حال ضبط {LOCAL_CHUNK_SECONDS} ثانیه...")
+
+            current_frames = sd.rec(
+                frames=LOCAL_CHUNK_SECONDS * SAMPLE_RATE,
+                samplerate=SAMPLE_RATE,
+                channels=CHANNELS,
+                dtype=DTYPE,
+            )
+            sd.wait()
+
+            audio_chunk = current_frames.flatten()
+
+            # --- Transcribe locally ---
+            print("  📝  در حال رونویسی محلی (faster-whisper)...")
+            try:
+                transcript, detected_lang = transcribe_chunk_local(whisper_model, audio_chunk)
+            finally:
+                # Discard raw audio immediately regardless of success or failure
+                del audio_chunk
+                current_frames = None
+
+            if not transcript:
+                print("  ℹ️   متنی تشخیص داده نشد — بخش بعدی.\n")
+                chunk_count += 1
+                continue
+
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            preview = transcript[:80] + ("..." if len(transcript) > 80 else "")
+            print(f"  ✅  [{ts}] [{detected_lang}] {preview}\n")
+
+            # Write transcript line to file
+            transcript_file.write(f"[{ts}] [{detected_lang}] {transcript}\n")
+            transcript_file.flush()
+
+            transcript_buffer.append(transcript)
+            chunk_count += 1
+
+            # --- Claude analysis ---
+            print("  🔍  در حال تحلیل زبانی...")
+            try:
+                analysis = analyze_transcript(
+                    client=anthropic_client,
+                    transcript_chunks=list(transcript_buffer),
+                    model=model,
+                )
+                output = format_analysis_for_terminal(analysis)
+                print("\n" + "─" * 60)
+                print(output)
+                print("─" * 60 + "\n")
+                transcript_file.write(f"[analysis]\n{output}\n\n")
+                transcript_file.flush()
+            except ValueError as exc:
+                print(f"  ⚠️   پاسخ Claude قابل تجزیه نبود: {exc}\n")
+            except Exception as exc:
+                print(f"  ⚠️   خطا در تحلیل Claude: {exc}\n")
+
+    except KeyboardInterrupt:
+        pass   # falls through to finally
+
+    finally:
+        transcript_buffer.clear()
+        current_frames = None
+        if transcript_file and not transcript_file.closed:
+            transcript_file.write(
+                f"\n# Session ended: {datetime.datetime.now().isoformat()}\n"
+            )
+            transcript_file.close()
+
+        print("\n\n" + "=" * 60)
+        print("  جلسه پایان یافت.")
+        print("  هیچ داده صوتی ذخیره نشد.")
+        print("  بافر متن پاک شد.")
+        if transcript_path.exists():
+            print(f"  📄  رونوشت: {transcript_path}")
+        print("=" * 60 + "\n")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -371,11 +526,10 @@ def enforce_fieldwork_gate(flags: set[str]) -> None:
     Hard gate for fieldwork mode — must be passed before any father/Qashqai session.
 
     Requires exactly one of:
+        --local-stt         Use local faster-whisper — audio never leaves device.
+                            10-second chunks. Transcripts saved to transcripts/.
         --zdr-confirmed     User asserts Zero Data Retention is active on their
-                            OpenAI organisation. Tool prints verification reminder
-                            and asks for confirmation before proceeding.
-        --local-stt         Switch to local Whisper (not yet implemented).
-                            Exits with TODO message.
+                            OpenAI organisation. Prints verification reminder.
         --consent-override  User types the full consent sentence accepting that
                             audio leaves the device without ZDR.
 
@@ -398,13 +552,13 @@ def enforce_fieldwork_gate(flags: set[str]) -> None:
         print("  حالت کار میدانی نیاز به یکی از گزینه‌های زیر دارد:")
         print("  Fieldwork mode requires one of the following flags:")
         print()
+        print("  --local-stt")
+        print("      Use local faster-whisper — audio never leaves the device.")
+        print("      صدا هرگز دستگاه را ترک نمی‌کند.")
+        print()
         print("  --zdr-confirmed")
         print("      Zero Data Retention is active on your OpenAI organisation.")
         print("      صدای پدر بدون ذخیره‌سازی پردازش می‌شود.")
-        print()
-        print("  --local-stt")
-        print("      Use local Whisper — audio never leaves the device.")
-        print("      صدا هرگز دستگاه را ترک نمی‌کند. (در دست توسعه)")
         print()
         print("  --consent-override")
         print("      Explicit documented consent accepting external API processing.")
@@ -416,12 +570,11 @@ def enforce_fieldwork_gate(flags: set[str]) -> None:
         sys.exit(1)
 
     if has_local:
-        print("\n" + "=" * 60)
-        print("  --local-stt: TODO — Local Whisper not yet implemented.")
-        print("  این قابلیت هنوز پیاده‌سازی نشده است.")
-        print("  صدا هرگز دستگاه را ترک نخواهد کرد — در نسخه بعدی.")
-        print("=" * 60 + "\n")
-        sys.exit(1)
+        # Gate passes — local STT is the privacy-safest option.
+        # main() will load the model and call run_local_listener().
+        print("\n  ✅  [local-stt] صدا هرگز دستگاه را ترک نمی‌کند.")
+        print("      رونوشت در transcripts/ ذخیره می‌شود.\n")
+        return
 
     if has_zdr:
         print("\n" + "=" * 60)
@@ -516,6 +669,56 @@ def main() -> None:
     # --- Fieldwork mode ---
     enforce_fieldwork_gate(flags)
 
+    if "--local-stt" in flags:
+        # Local path: no OPENAI_API_KEY needed — only Anthropic for analysis.
+        load_dotenv()
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        model = os.environ.get("ANTHROPIC_MODEL", "")
+        missing = [
+            name for name, val in [
+                ("ANTHROPIC_API_KEY", anthropic_key),
+                ("ANTHROPIC_MODEL", model),
+            ]
+            if not val
+        ]
+        if missing:
+            print(f"\n❌ متغیرهای محیطی تنظیم نشده: {', '.join(missing)}")
+            print("   فایل .env.example را به .env کپی کرده و کلیدها را پر کنید.\n")
+            sys.exit(1)
+
+        request_consent()
+
+        try:
+            anthropic_client = get_anthropic_client()
+        except RuntimeError as exc:
+            print(f"\n❌ {exc}\n")
+            sys.exit(1)
+
+        try:
+            sd.check_input_settings(samplerate=SAMPLE_RATE, channels=CHANNELS)
+        except sd.PortAudioError as exc:
+            print(f"\n❌ میکروفون در دسترس نیست: {exc}")
+            print("   لطفاً دسترسی به میکروفون را در تنظیمات ویندوز فعال کنید.\n")
+            sys.exit(1)
+
+        print("\n  ⏳  در حال بارگذاری مدل Whisper محلی (small / cpu / int8)...")
+        print("      (بارگذاری اولیه ممکن است چند ثانیه طول بکشد)\n")
+        try:
+            from faster_whisper import WhisperModel
+            whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
+            print("  ✅  مدل بارگذاری شد.\n")
+        except ImportError:
+            print("\n❌ faster-whisper نصب نشده است.")
+            print("   pip install faster-whisper\n")
+            sys.exit(1)
+        except Exception as exc:
+            print(f"\n❌ خطا در بارگذاری مدل faster-whisper: {exc}\n")
+            sys.exit(1)
+
+        run_local_listener(whisper_model, anthropic_client, model)
+        sys.exit(0)
+
+    # --- Fieldwork mode with OpenAI STT (zdr-confirmed or consent-override) ---
     openai_key, anthropic_key, model = load_env()
 
     request_consent()

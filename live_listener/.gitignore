@@ -1,0 +1,5 @@
+# Never commit real session transcript files
+transcripts/*.txt
+
+# Never commit real environment file
+.env
