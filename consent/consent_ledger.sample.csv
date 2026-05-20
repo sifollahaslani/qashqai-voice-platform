@@ -1,0 +1,2 @@
+consent_id,item_id,recording_id,narrator_id,consent_version,consent_date,status,access_level,transcription_allowed,translation_allowed,summarization_allowed,embedding_allowed,ai_training_allowed,synthetic_voice_allowed,research_use_allowed,public_release_allowed,institutional_sharing_allowed,commercial_use_allowed,revocable,approved_by,notes
+consent-0001,qv-item-000001,qv-rec-2026-000001,nar-0001,v1,,pending,private,false,false,false,false,false,false,false,false,false,false,true,,"Sample only; replace with documented consent before use"

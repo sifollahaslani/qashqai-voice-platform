@@ -1,0 +1,49 @@
+{
+  "validation_id": "review-2026-000001",
+  "item_id": "qv-item-2026-000001",
+  "recording_id": "qv-rec-2026-000001",
+  "status": "approved_family_only",
+  "sensitivity_level": "family_private",
+  "reviewers": [
+    {
+      "reviewer_id": "reviewer-9001",
+      "role": "fictional_language_reviewer",
+      "review_type": "linguistic"
+    },
+    {
+      "reviewer_id": "reviewer-9002",
+      "role": "fictional_family_reviewer",
+      "review_type": "cultural"
+    }
+  ],
+  "review_date": "2026-05-20",
+  "linguistic_review": {
+    "status": "reviewed",
+    "language_accuracy": "sample_not_applicable",
+    "dialect_accuracy": "sample_not_applicable",
+    "uncertain_terms": [],
+    "notes": "No real transcript is included; this demonstrates the review record shape."
+  },
+  "translation_review": {
+    "status": "reviewed",
+    "languages_reviewed": [
+      "en"
+    ],
+    "uncertain_translations": [],
+    "notes": "No real translation is included; this demonstrates multilingual review linkage."
+  },
+  "cultural_review": {
+    "status": "reviewed",
+    "names_places_checked": true,
+    "restricted_or_sensitive_content": "family_private",
+    "publication_recommendation": "not_approved",
+    "ai_use_recommendation": "local_transcription_translation_only",
+    "notes": "Fictional sample is marked family-only to demonstrate conservative access."
+  },
+  "required_actions": [
+    "Do not export externally without new consent and review.",
+    "Do not include in datasets.",
+    "Do not create embeddings or synthetic voice."
+  ],
+  "notes": "Validation can reduce risk but does not replace narrator consent or future review."
+}

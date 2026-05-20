@@ -9,11 +9,15 @@ recordings/
 raw_recordings/
 audio/recordings/
 audio/raw/
+archive/raw_audio/*
 archive/**/audio/
 archive/**/raw/
+!archive/raw_audio/.gitkeep
 
 # Exports and shared archive bundles
-exports/
+exports/*
+!exports/.gitkeep
+!exports/export_manifest.sample.json
 exported/
 shared_exports/
 datasets/
@@ -29,6 +33,9 @@ audio/models/
 *.pkl
 *.joblib
 embeddings/
+derived/*
+!derived/.gitkeep
+!derived/README.md
 vector_db/
 vectorstore/
 *.faiss
@@ -80,10 +87,20 @@ ENV/
 # Temporary and local files
 tmp/
 temp/
+temp_processing/*
+!temp_processing/.gitkeep
 .cache/
 *.tmp
 *.temp
 *.log
+
+# Private identity records and sensitive archive text
+identities_private/*
+!identities_private/.gitkeep
+archive/transcripts/*
+!archive/transcripts/.gitkeep
+archive/translations/*
+!archive/translations/.gitkeep
 
 # OS and editor files
 .DS_Store

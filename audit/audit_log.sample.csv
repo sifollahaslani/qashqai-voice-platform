@@ -1,0 +1,2 @@
+audit_id,timestamp,item_id,recording_id,actor_id,action,governance_area,details
+audit-0001,,qv-item-000001,qv-rec-2026-000001,maintainer-0001,created_metadata,metadata,"Sample audit row"

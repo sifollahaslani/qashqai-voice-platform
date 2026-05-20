@@ -1,0 +1,2 @@
+export_id,timestamp,item_id,recording_id,recipient,purpose,consent_id,consent_status,validation_status,files_shared,approved_by,notes
+export-2026-000001,2026-05-20T20:38:00+02:00,qv-item-2026-000001,qv-rec-2026-000001,none,not_exported,consent-2026-000001,active,approved_family_only,none,maintainer-0001,"Fictional tracking row: export manifest exists to show restrictions; no files are approved for sharing."

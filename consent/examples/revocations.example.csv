@@ -1,0 +1,2 @@
+revocation_id,consent_id,item_id,recording_id,narrator_id,revoked_date,revoked_by,revocation_scope,affected_permissions,status,notes
+rev-2026-000001,consent-2026-000001,qv-item-2026-000001,qv-rec-2026-000001,nar-9001,,,"future_use","transcription;translation;export;ai_processing;dataset_creation","not_revoked","Fictional sample row showing where a future revocation would be recorded."

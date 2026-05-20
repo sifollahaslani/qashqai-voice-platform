@@ -1,0 +1,57 @@
+{
+  "export_id": "export-2026-000001",
+  "status": "not_approved",
+  "created_at": "2026-05-20T20:38:00+02:00",
+  "created_by": "maintainer-0001",
+  "recipient": {
+    "name": "No external recipient",
+    "type": "none"
+  },
+  "purpose": "Demonstrate export restriction tracking for a fictional governed item.",
+  "items": [
+    {
+      "item_id": "qv-item-2026-000001",
+      "recording_id": "qv-rec-2026-000001",
+      "metadata_record": "metadata/examples/qv-item-2026-000001.metadata.json",
+      "consent_id": "consent-2026-000001",
+      "consent_status": "active",
+      "validation_id": "review-2026-000001",
+      "validation_status": "approved_family_only",
+      "access_level": "family_only",
+      "files_included": [],
+      "files_excluded": [
+        "archive/raw_audio/qv-rec-2026-000001.wav",
+        "archive/transcripts/qv-item-2026-000001.qashqai.txt",
+        "archive/translations/qv-item-2026-000001.en.txt"
+      ],
+      "restrictions": [
+        "no_external_sharing",
+        "no_public_release",
+        "no_dataset_creation",
+        "no_embeddings",
+        "no_ai_training",
+        "no_synthetic_voice"
+      ]
+    }
+  ],
+  "institutional_sharing": {
+    "allowed": false,
+    "conditions_before_future_sharing": [
+      "new consent allowing institutional sharing",
+      "updated cultural validation",
+      "export log entry",
+      "recipient agreement covering retention, deletion, revocation, AI use, and redistribution"
+    ]
+  },
+  "revocation_handling": {
+    "revocable": true,
+    "revocation_record": "consent/examples/revocations.example.csv",
+    "effect_if_revoked": [
+      "stop future processing",
+      "remove from future exports",
+      "block dataset inclusion",
+      "update metadata and audit log"
+    ]
+  },
+  "notes": "This is a fictional sample manifest. It demonstrates restricted export tracking without sharing files."
+}

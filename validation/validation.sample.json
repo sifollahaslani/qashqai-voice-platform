@@ -1,0 +1,29 @@
+{
+  "validation_id": "review-0001",
+  "item_id": "qv-item-000001",
+  "recording_id": "qv-rec-2026-000001",
+  "status": "pending",
+  "sensitivity_level": "unclassified",
+  "reviewers": [],
+  "review_date": "",
+  "linguistic_review": {
+    "status": "not_reviewed",
+    "language_accuracy": "not_reviewed",
+    "dialect_accuracy": "not_reviewed",
+    "uncertain_terms": []
+  },
+  "translation_review": {
+    "status": "not_reviewed",
+    "languages_reviewed": [],
+    "uncertain_translations": []
+  },
+  "cultural_review": {
+    "status": "not_reviewed",
+    "names_places_checked": false,
+    "restricted_or_sensitive_content": "unknown",
+    "publication_recommendation": "not_approved",
+    "ai_use_recommendation": "not_approved"
+  },
+  "required_actions": [],
+  "notes": ""
+}

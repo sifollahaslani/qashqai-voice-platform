@@ -1,0 +1,27 @@
+{
+  "export_id": "export-2026-000001",
+  "created_at": "",
+  "created_by": "",
+  "recipient": "",
+  "purpose": "",
+  "items": [
+    {
+      "item_id": "qv-item-000001",
+      "recording_id": "qv-rec-2026-000001",
+      "files_included": [],
+      "consent_id": "consent-0001",
+      "consent_status": "pending",
+      "validation_status": "pending",
+      "access_level": "private",
+      "restrictions": [
+        "sample_only",
+        "not_for_distribution"
+      ]
+    }
+  ],
+  "ai_use_allowed": false,
+  "dataset_creation_allowed": false,
+  "redistribution_allowed": false,
+  "revocation_contact": "",
+  "notes": "Sample manifest only. Real exports require consent, validation, and audit logging."
+}

@@ -1,0 +1,66 @@
+{
+  "item_id": "qv-item-2026-000001",
+  "recording_id": "qv-rec-2026-000001",
+  "collection": "oral_histories",
+  "title": "Fictional Family Memory Sample",
+  "description": "Fictional demonstration item for governance workflow testing. No real recording is included.",
+  "date_recorded": "2026-05-20",
+  "location_general": "Local private setting",
+  "recorded_by": "maintainer-0001",
+  "narrator_ref": {
+    "narrator_id": "nar-9001",
+    "display_mode": "pseudonym",
+    "public_display_name": "Fictional Narrator A"
+  },
+  "language": {
+    "primary_language": "Qashqai",
+    "dialect_or_variety": "fictional-example-variety",
+    "other_languages_present": [
+      "English"
+    ],
+    "transcript_languages": [
+      "qashqai"
+    ],
+    "translation_languages": [
+      "en"
+    ],
+    "notes": "Dialect value is fictional and used only to demonstrate metadata structure."
+  },
+  "consent": {
+    "consent_id": "consent-2026-000001",
+    "consent_version": "v1",
+    "current_status": "active",
+    "revoked": false,
+    "revocation_record": "consent/examples/revocations.example.csv"
+  },
+  "ai_permissions": {
+    "transcription_allowed": true,
+    "translation_allowed": true,
+    "summarization_allowed": false,
+    "embedding_allowed": false,
+    "ai_training_allowed": false,
+    "synthetic_voice_allowed": false
+  },
+  "cultural_review": {
+    "validation_id": "review-2026-000001",
+    "status": "approved_family_only",
+    "sensitivity_level": "family_private",
+    "publication_approved": false,
+    "external_sharing_approved": false,
+    "ai_use_reviewed": true
+  },
+  "files": {
+    "raw_audio_path": "archive/raw_audio/qv-rec-2026-000001.wav",
+    "transcript_source": "archive/transcripts/qv-item-2026-000001.qashqai.txt",
+    "translation_en": "archive/translations/qv-item-2026-000001.en.txt",
+    "validation_record": "validation/examples/qv-item-2026-000001.validation.json",
+    "export_manifest": "exports/examples/export-2026-000001.manifest.json"
+  },
+  "traceability": {
+    "created_at": "2026-05-20T20:35:00+02:00",
+    "created_by": "maintainer-0001",
+    "last_updated_at": "2026-05-20T20:35:00+02:00",
+    "last_updated_by": "maintainer-0001",
+    "checksum_audio_original": "not_available_for_sample"
+  }
+}

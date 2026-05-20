@@ -1,0 +1,5 @@
+audit_id,timestamp,item_id,recording_id,actor_id,action,governance_area,details
+audit-2026-000001,2026-05-20T20:35:00+02:00,qv-item-2026-000001,qv-rec-2026-000001,maintainer-0001,created_example_item,metadata,"Created fictional governed sample item and metadata links."
+audit-2026-000002,2026-05-20T20:36:00+02:00,qv-item-2026-000001,qv-rec-2026-000001,maintainer-0001,recorded_sample_consent,consent,"Linked consent-2026-000001 with family-only access and revocable consent."
+audit-2026-000003,2026-05-20T20:37:00+02:00,qv-item-2026-000001,qv-rec-2026-000001,reviewer-9002,recorded_sample_validation,cultural_validation,"Marked fictional item approved_family_only with no public release or external sharing."
+audit-2026-000004,2026-05-20T20:38:00+02:00,qv-item-2026-000001,qv-rec-2026-000001,maintainer-0001,created_restricted_export_manifest,exports,"Created manifest showing institutional export is not approved."
