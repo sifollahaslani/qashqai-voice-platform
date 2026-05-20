@@ -1,0 +1,18 @@
+{
+  "review_id": "review-0001",
+  "item_id": "qv-item-000001",
+  "recording_id": "qv-rec-2026-000001",
+  "status": "pending",
+  "sensitivity_level": "unclassified",
+  "reviewer_id": "",
+  "review_date": "",
+  "language_accuracy": "not_reviewed",
+  "dialect_accuracy": "not_reviewed",
+  "translation_accuracy": "not_reviewed",
+  "names_places_checked": false,
+  "sacred_or_restricted_content": "unknown",
+  "publication_recommendation": "not_approved",
+  "ai_use_recommendation": "not_approved",
+  "required_actions": [],
+  "notes": ""
+}

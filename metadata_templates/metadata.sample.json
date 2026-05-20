@@ -1,0 +1,58 @@
+{
+  "item_id": "qv-item-000001",
+  "recording_id": "qv-rec-2026-000001",
+  "collection": "oral_histories",
+  "family_node": "family-node-001",
+  "title": "",
+  "description": "",
+  "date_recorded": "",
+  "location_general": "",
+  "recorded_by": "",
+  "narrator_ref": {
+    "narrator_id": "nar-0001",
+    "display_mode": "anonymized"
+  },
+  "language": {
+    "primary_language": "Qashqai",
+    "dialect_or_variety": "",
+    "other_languages_present": [],
+    "transcript_languages": [
+      "qashqai"
+    ],
+    "translation_languages": []
+  },
+  "consent": {
+    "consent_id": "",
+    "consent_version": "",
+    "current_status": "pending",
+    "revoked": false
+  },
+  "ai_permissions": {
+    "transcription_allowed": false,
+    "translation_allowed": false,
+    "embedding_allowed": false,
+    "ai_training_allowed": false,
+    "synthetic_voice_allowed": false
+  },
+  "cultural_review": {
+    "status": "pending",
+    "sensitivity_level": "unclassified",
+    "reviewer_id": "",
+    "review_date": "",
+    "publication_approved": false,
+    "ai_use_reviewed": false
+  },
+  "files": {
+    "audio_original": "",
+    "transcript_source": "",
+    "translations": {},
+    "validation": "validation.json"
+  },
+  "traceability": {
+    "created_at": "",
+    "created_by": "",
+    "last_updated_at": "",
+    "last_updated_by": "",
+    "checksum_audio_original": ""
+  }
+}

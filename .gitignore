@@ -1,0 +1,92 @@
+# Raw audio and recordings
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.aac
+*.ogg
+recordings/
+raw_recordings/
+audio/recordings/
+audio/raw/
+archive/**/audio/
+archive/**/raw/
+
+# Exports and shared archive bundles
+exports/
+exported/
+shared_exports/
+datasets/
+archive_exports/
+
+# AI models, embeddings, and vector stores
+models/
+audio/models/
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.pkl
+*.joblib
+embeddings/
+vector_db/
+vectorstore/
+*.faiss
+*.index
+*.npy
+*.npz
+
+# Secrets, API keys, and local configuration
+.env
+.env.*
+*.env
+secrets/
+credentials/
+*.key
+*.pem
+*.p12
+*.pfx
+api_keys.*
+credentials.*
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+local_db/
+database/
+chroma/
+qdrant_storage/
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Temporary and local files
+tmp/
+temp/
+.cache/
+*.tmp
+*.temp
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
