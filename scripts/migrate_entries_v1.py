@@ -37,7 +37,17 @@ if str(REPO_ROOT) not in sys.path:
 
 from pydantic import ValidationError
 
-from app.main import LinguisticEntry  # noqa: E402
+# Stage A — migration writes must produce a `migration_prepared` audit line.
+# These imports use the same chokepoint that the HTTP create_entry path uses;
+# no new abstraction. See AUDIT_SCHEMA_VERSION comment in app/main.py.
+from app.main import (  # noqa: E402
+    AUDIT_SCHEMA_VERSION,
+    LinguisticEntry,
+    _append_audit,
+    _utc_now_iso,
+)
+
+_MIGRATION_VERSION = 1
 
 SOURCE_FILE = REPO_ROOT / "data" / "entries.json"
 TARGET_FILE = REPO_ROOT / "data" / "entries.json.migrated"
@@ -144,6 +154,39 @@ def main() -> int:
     )
     print(f"[migrate] wrote {len(migrated)} record(s) to {TARGET_FILE}")
     print(f"[migrate] source file NOT modified.")
+
+    # Stage A — record that a migration was prepared. The migration is not yet
+    # *applied* (operator must mv .migrated → .json) — that's tracked separately
+    # in a future Slice (Stage B). For now: "I produced a migrated artifact" is
+    # the auditable governance event at this scope.
+    #
+    # Audit failure handling mirrors the HTTP create_entry path (Step 6): if
+    # the on-disk artifact was created but the audit line could not be written,
+    # exit non-zero with a clear message so the operator does not apply the
+    # migration without a trace.
+    try:
+        _append_audit({
+            "audit_schema_version": AUDIT_SCHEMA_VERSION,
+            "ts": _utc_now_iso(),
+            "op": "migration_prepared",
+            "migration_version": _MIGRATION_VERSION,
+            "source_path": str(SOURCE_FILE),
+            "target_path": str(TARGET_FILE),
+            "record_count": len(migrated),
+            "request_origin": "local-cli",
+        })
+    except OSError as exc:
+        print(
+            f"[migrate] WARNING: migrated file written but audit append failed: {exc}",
+            file=sys.stderr,
+        )
+        print(
+            "[migrate] Resolve the audit issue BEFORE running the operator "
+            "replacement so the migration is not applied without a trace.",
+            file=sys.stderr,
+        )
+        return 1
+
     print(f"[migrate] next step: review {TARGET_FILE.name}, then back up and replace.")
     return 0
 

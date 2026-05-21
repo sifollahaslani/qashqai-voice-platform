@@ -48,7 +48,15 @@ if str(REPO_ROOT) not in sys.path:
 
 from pydantic import ValidationError
 
-from app.main import LinguisticEntry  # noqa: E402
+# Stage A — see migrate_entries_v1.py for the rationale.
+from app.main import (  # noqa: E402
+    AUDIT_SCHEMA_VERSION,
+    LinguisticEntry,
+    _append_audit,
+    _utc_now_iso,
+)
+
+_MIGRATION_VERSION = 2
 
 SOURCE_FILE = REPO_ROOT / "data" / "entries.json"
 TARGET_FILE = REPO_ROOT / "data" / "entries.json.migrated"
@@ -156,6 +164,31 @@ def main() -> int:
     )
     print(f"[migrate-v2] wrote {len(migrated)} record(s) to {TARGET_FILE}")
     print(f"[migrate-v2] source file NOT modified.")
+
+    # Stage A — record migration preparation in the canonical audit log.
+    try:
+        _append_audit({
+            "audit_schema_version": AUDIT_SCHEMA_VERSION,
+            "ts": _utc_now_iso(),
+            "op": "migration_prepared",
+            "migration_version": _MIGRATION_VERSION,
+            "source_path": str(SOURCE_FILE),
+            "target_path": str(TARGET_FILE),
+            "record_count": len(migrated),
+            "request_origin": "local-cli",
+        })
+    except OSError as exc:
+        print(
+            f"[migrate-v2] WARNING: migrated file written but audit append failed: {exc}",
+            file=sys.stderr,
+        )
+        print(
+            "[migrate-v2] Resolve the audit issue BEFORE running the operator "
+            "replacement so the migration is not applied without a trace.",
+            file=sys.stderr,
+        )
+        return 1
+
     print(f"[migrate-v2] next step: review {TARGET_FILE.name}, then back up and replace.")
     return 0
 

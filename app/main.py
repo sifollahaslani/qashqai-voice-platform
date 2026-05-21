@@ -169,11 +169,24 @@ _ENTRIES_FILE = _DATA_DIR / "entries.json"
 # rather than silently lose the audit record.
 _AUDIT_LOG_FILE = _DATA_DIR / "audit_log.jsonl"
 
-# Audit schema version. Bumped Step 6 → Step 7: create_entry events gained
-# the `auth_mode` field, and a new `auth_denied` op was introduced. The bump
-# is forward-only — no pre-Step-7 audit data exists on disk (the Step 6
-# leak was cleaned and never had real lines).
-AUDIT_SCHEMA_VERSION = 2
+# Audit schema version. History:
+#   v1 — Step 6 — create_entry op only (never persisted on disk; test leak cleaned).
+#   v2 — Step 7 — added auth_mode field to create_entry; added auth_denied op.
+#   v3 — Stage A — added migration_prepared op for migration scripts (Slice 1).
+# The bump is forward-only and additive: readers parsing v3 lines see all v2
+# fields unchanged. The version tag tells consumers what set of ops + fields
+# they may encounter.
+#
+# CHOKEPOINT NOTE — every governance-affecting write SHOULD result in an
+# _append_audit() call. Today that means:
+#   - HTTP create_entry            -> op: "create_entry"     (app.main)
+#   - HTTP auth denial             -> op: "auth_denied"      (app.main)
+#   - Migration script preparation -> op: "migration_prepared" (scripts/migrate_*)
+# Other writers (hook decisions, live_listener sessions, operator filesystem
+# rituals) are documented bypass surfaces — see governance-hardening inventory
+# report and Slice 2+ proposals. Do not add new write paths without an audit
+# line.
+AUDIT_SCHEMA_VERSION = 3
 
 # Step 7 — shared-secret auth + localhost allowlist.
 # Read by require_api_token() at request time (not module load) so tests can

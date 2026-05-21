@@ -773,7 +773,9 @@ def test_auth_deny_produces_audit_event(tmp_path, monkeypatch):
     deny = next(l for l in lines if l["op"] == "auth_denied")
     assert deny["reason"] == "missing_or_invalid_token"
     assert deny["request_origin"]  # non-empty
-    assert deny["audit_schema_version"] == 2
+    # Stage A bumped AUDIT_SCHEMA_VERSION from 2 → 3. The Step-7 auth_denied
+    # op is unchanged in shape; only the version tag advanced.
+    assert deny["audit_schema_version"] == 3
 
 
 def test_auth_deny_for_remote_origin_audited(tmp_path, monkeypatch):
