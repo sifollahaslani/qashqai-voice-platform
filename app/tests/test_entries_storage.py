@@ -161,6 +161,10 @@ def test_get_entries_against_legacy_on_disk_record(tmp_path, monkeypatch):
         "content_type": "word",
         "language": "qashqai",
         "dialect": "dareshuri",
+        # Canonical speaker_id (Step 4) — keeps this test focused on the
+        # legacy `ai_usage_permission` field surfacing as 500. Without this
+        # normalisation, the test would also be exercising the speaker_id
+        # format validator, conflating two failure modes.
         "speaker_id": "SPK-001",
         "speaker_display_name": None,
         "recording_date": None,

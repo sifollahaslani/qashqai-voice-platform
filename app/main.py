@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Literal, List, Optional
@@ -48,6 +49,13 @@ ConsentStatus = Literal["confirmed", "pending", "withdrawn", "restricted"]
 
 VisibilityStatus = Literal["public", "internal", "blocked"]
 
+# Canonical speaker-id format. The consent-gate hook (hooks/consent-gate.sh)
+# uses this same pattern (case-insensitively) to detect speaker references in
+# Bash commands and to look up consent. Enforced here so the model and the
+# hook share a single source of truth — see Step 4.
+SPEAKER_ID_PATTERN = r"^SPK-\d{3,}$"
+_SPEAKER_ID_RE = re.compile(SPEAKER_ID_PATTERN)
+
 
 class LinguisticEntryCreate(BaseModel):
     # Governance hardening (Step 1): reject unknown fields at the request boundary
@@ -79,6 +87,16 @@ class LinguisticEntryCreate(BaseModel):
         if not v.strip():
             raise ValueError("Field must not be blank")
         return v.strip()
+
+    @field_validator("speaker_id")
+    @classmethod
+    def must_match_canonical_speaker_id(cls, v: str) -> str:
+        if not _SPEAKER_ID_RE.match(v):
+            raise ValueError(
+                f"speaker_id must match canonical format {SPEAKER_ID_PATTERN} "
+                f"(e.g. 'SPK-001'); got {v!r}. Case matters."
+            )
+        return v
 
     @field_validator("visibility_status")
     @classmethod
