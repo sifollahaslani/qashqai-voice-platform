@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/qashqai-voice/validation-schema-example.json",
+  "title": "QashqAI Voice Metadata Validation Schema Example",
+  "type": "object",
+  "required": [
+    "item_id",
+    "recording_id",
+    "collection",
+    "narrator_ref",
+    "language",
+    "consent",
+    "ai_permissions",
+    "cultural_review",
+    "files",
+    "traceability"
+  ],
+  "properties": {
+    "item_id": {
+      "type": "string",
+      "pattern": "^qv-item-[0-9]{4}-[0-9]{6}$"
+    },
+    "recording_id": {
+      "type": "string",
+      "pattern": "^qv-rec-[0-9]{4}-[0-9]{6}$"
+    },
+    "collection": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "date_recorded": {
+      "type": "string"
+    },
+    "location_general": {
+      "type": "string"
+    },
+    "narrator_ref": {
+      "type": "object",
+      "required": [
+        "narrator_id",
+        "display_mode"
+      ],
+      "properties": {
+        "narrator_id": {
+          "type": "string",
+          "pattern": "^nar-[0-9]{4}$"
+        },
+        "display_mode": {
+          "type": "string",
+          "enum": [
+            "private",
+            "anonymized",
+            "pseudonym",
+            "named"
+          ]
+        },
+        "public_display_name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "language": {
+      "type": "object",
+      "required": [
+        "primary_language",
+        "dialect_or_variety",
+        "transcript_languages",
+        "translation_languages"
+      ],
+      "properties": {
+        "primary_language": {
+          "type": "string"
+        },
+        "dialect_or_variety": {
+          "type": "string"
+        },
+        "other_languages_present": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "transcript_languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "translation_languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "consent": {
+      "type": "object",
+      "required": [
+        "consent_id",
+        "current_status",
+        "revoked"
+      ],
+      "properties": {
+        "consent_id": {
+          "type": "string"
+        },
+        "consent_version": {
+          "type": "string"
+        },
+        "current_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "active",
+            "narrowed",
+            "revoked"
+          ]
+        },
+        "revoked": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ai_permissions": {
+      "type": "object",
+      "required": [
+        "transcription_allowed",
+        "translation_allowed",
+        "summarization_allowed",
+        "embedding_allowed",
+        "ai_training_allowed",
+        "synthetic_voice_allowed"
+      ],
+      "properties": {
+        "transcription_allowed": {
+          "type": "boolean"
+        },
+        "translation_allowed": {
+          "type": "boolean"
+        },
+        "summarization_allowed": {
+          "type": "boolean"
+        },
+        "embedding_allowed": {
+          "type": "boolean"
+        },
+        "ai_training_allowed": {
+          "type": "boolean"
+        },
+        "synthetic_voice_allowed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cultural_review": {
+      "type": "object",
+      "required": [
+        "validation_id",
+        "status",
+        "sensitivity_level",
+        "publication_approved",
+        "external_sharing_approved",
+        "ai_use_reviewed"
+      ],
+      "properties": {
+        "validation_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "needs_linguistic_review",
+            "needs_translation_review",
+            "needs_cultural_review",
+            "approved_family_only",
+            "approved_research",
+            "approved_public",
+            "restricted",
+            "revoked"
+          ]
+        },
+        "sensitivity_level": {
+          "type": "string",
+          "enum": [
+            "unclassified",
+            "low",
+            "family_private",
+            "community_sensitive",
+            "restricted",
+            "sacred_or_not_for_publication"
+          ]
+        },
+        "publication_approved": {
+          "type": "boolean"
+        },
+        "external_sharing_approved": {
+          "type": "boolean"
+        },
+        "ai_use_reviewed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "files": {
+      "type": "object",
+      "required": [
+        "raw_audio_path",
+        "validation_record"
+      ],
+      "properties": {
+        "raw_audio_path": {
+          "type": "string"
+        },
+        "transcript_source": {
+          "type": "string"
+        },
+        "validation_record": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "traceability": {
+      "type": "object",
+      "required": [
+        "created_at",
+        "created_by",
+        "last_updated_at",
+        "last_updated_by"
+      ],
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "created_by": {
+          "type": "string"
+        },
+        "last_updated_at": {
+          "type": "string"
+        },
+        "last_updated_by": {
+          "type": "string"
+        },
+        "checksum_audio_original": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

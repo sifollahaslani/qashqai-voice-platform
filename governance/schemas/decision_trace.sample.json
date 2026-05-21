@@ -1,0 +1,71 @@
+{
+  "decision_id": "decision-2026-000001",
+  "timestamp": "2026-05-21T00:00:00+02:00",
+  "requested_action": "embedding",
+  "result": "denied",
+  "item_id": "qv-item-2026-000001",
+  "recording_id": "qv-rec-2026-000001",
+  "actor": {
+    "actor_id": "maintainer-0001",
+    "role": "project_maintainer"
+  },
+  "input_records": [
+    {
+      "record_type": "metadata",
+      "record_id": "qv-item-2026-000001",
+      "path_or_reference": "metadata/examples/qv-item-2026-000001.metadata.json",
+      "version": "sample",
+      "evidence_class": "governance_record"
+    },
+    {
+      "record_type": "validation",
+      "record_id": "review-2026-000001",
+      "path_or_reference": "validation/examples/qv-item-2026-000001.validation.json",
+      "version": "sample",
+      "evidence_class": "review_finding"
+    }
+  ],
+  "rules_evaluated": [
+    {
+      "rule_id": "block_missing_or_false_consent",
+      "outcome": "fail",
+      "reason": "embedding_allowed is false"
+    },
+    {
+      "rule_id": "embedding.validation_status",
+      "outcome": "fail",
+      "reason": "approved_family_only does not permit embeddings"
+    }
+  ],
+  "reasons": [
+    "embedding_allowed is false",
+    "validation status is approved_family_only",
+    "family-private material is not eligible for embedding creation"
+  ],
+  "unresolved_uncertainties": [],
+  "required_human_reviews": [
+    "new consent and cultural validation would be required before reconsideration"
+  ],
+  "override": {
+    "override_type": "none"
+  },
+  "lifecycle_transition": {
+    "artifact_class": "embedding",
+    "artifact_id": "qv-item-2026-000001.embedding.request",
+    "prior_state": "validated_family_only",
+    "requested_state": "derived_draft",
+    "final_state": "validated_family_only",
+    "transition_id": "embedding.create",
+    "reversibility": "partially_irreversible",
+    "state_transition_result": "denied",
+    "irreversibility_acknowledged": false,
+    "downstream_invalidation_required": false,
+    "downstream_artifacts": []
+  },
+  "audit": {
+    "audit_required": true,
+    "audit_id": "audit-2026-000001",
+    "decision_id": "decision-2026-000001",
+    "audit_log_path": "audit_log.csv"
+  }
+}
