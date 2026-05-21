@@ -33,6 +33,8 @@ The export gate should read:
 10. AI, dataset, public, research, or institutional uses require separate consent fields.
 11. Export log entry must be prepared.
 12. Audit entry must be prepared.
+13. Decision trace must identify the exact records and rules supporting denial, hold, or approval.
+14. Lifecycle transition must be legal before `export_staged`, `exported_external`, or `published_public`.
 ```
 
 ## Stop Conditions
@@ -48,6 +50,8 @@ Stop export when:
 - identity records are included accidentally;
 - raw recordings are included accidentally;
 - reviewer disagreement is unresolved.
+- any higher-priority restriction conflicts with export approval.
+- lifecycle rules classify the transition as irreversible or partially irreversible without recorded human approval, downstream invalidation plan, and recall limits.
 
 ## Example Export Authorization Result
 
@@ -66,6 +70,7 @@ Stop export when:
     "new consent for institutional sharing",
     "updated cultural validation",
     "partner restrictions",
+    "decision trace",
     "audit log entry"
   ]
 }
@@ -83,3 +88,4 @@ Suggested file defaults:
 - validation notes: share only summary status unless detailed notes are approved;
 - embeddings and datasets: exclude unless explicitly approved.
 
+Export release is at least partially irreversible. The decision trace should record prior state, requested state, final state, transition ID, reversibility, downstream artifacts, and revocation contact path.

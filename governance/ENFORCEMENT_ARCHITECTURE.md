@@ -14,6 +14,10 @@ QashqAI Voice should use simple gates before sensitive actions:
 metadata gate -> consent gate -> revocation gate -> cultural validation gate -> action gate -> audit log
 ```
 
+Operational precedence is defined in `OPERATIONAL_ENFORCEMENT_SPEC.md`. If gate results conflict, the most restrictive applicable result prevails. Emergency restrictions and revocations take priority over consent permissions, cultural validation approvals, institutional requests, and action-specific defaults.
+
+Lifecycle-state enforcement is defined in `LIFECYCLE_STATE_ENFORCEMENT.md`. Gates must not only decide whether an action is permitted; they must also decide whether the requested artifact state transition is legal, reversible, partially irreversible, or irreversible.
+
 The action may be:
 
 - transcription;
@@ -25,6 +29,8 @@ The action may be:
 - institutional sharing;
 - public release;
 - dataset creation.
+
+Each action should resolve to a lifecycle transition such as `processing_local`, `derived_reviewed`, `export_staged`, `exported_external`, `published_public`, `dataset_registered`, `training_committed`, `revoked_blocked`, `downstream_invalidation_pending`, or `invalidated`.
 
 ## Gate 1: Metadata Validation
 
@@ -44,6 +50,8 @@ It should verify:
 - traceability fields exist.
 
 This gate can be automated safely. It checks structure, not cultural meaning.
+
+Metadata checks should distinguish evidence from inference. Source records, governance records, review findings, derived artifacts, machine outputs, inferences, and external claims have different evidentiary weight. Automated tooling should not treat AI-generated descriptions, inferred topics, or external claims as equivalent to consent records, revocation records, or human validation findings.
 
 ## Gate 2: Consent-Aware Processing
 
@@ -119,6 +127,27 @@ The audit gate creates or requires an audit entry for:
 
 Audit logging can be automated as a draft, but a human should review high-risk entries.
 
+For governed actions, the audit entry should be backed by a decision trace. The decision trace records requested action, input records, evidence classes, rules evaluated, allow/deny/hold result, reasons, unresolved uncertainties, required human reviews, and the linked audit ID. A sample schema is available at `governance/schemas/decision_trace.schema.json`.
+
+Denied, held, revoked, emergency-restricted, and invalidated results must produce both a decision trace and an audit row. Parser failure, schema failure, unreadable records, and missing lifecycle-transition rules must result in `hold_for_review`, not silent continuation.
+
+## Enforcement Hierarchy
+
+Use this hierarchy when an item has multiple applicable records:
+
+```text
+1. Emergency restriction
+2. Revocation or narrowed consent
+3. Active consent limits
+4. Cultural validation status and sensitivity level
+5. Access-control policy
+6. AI-use policy
+7. Export, dataset, or partner-specific terms
+8. Requested action defaults
+```
+
+Default result is denial or hold for review. No export, dataset, AI process, or institutional request should broaden a higher-priority restriction.
+
 ## Local-First Enforcement Patterns
 
 Recommended small-team patterns:
@@ -175,3 +204,4 @@ scripts/governance/write_audit_entry.py
 
 These should run locally, avoid uploading data, and produce clear pass/fail results with human-readable reasons.
 
+Initial implementation should read `governance/rules/enforcement_rules.sample.json` as a policy contract, not as an automatic approval engine. Passing structural checks may permit a low-risk local action only when consent, revocation, validation, and human-oversight boundaries are satisfied.

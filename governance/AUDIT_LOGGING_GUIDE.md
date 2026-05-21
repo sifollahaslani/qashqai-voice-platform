@@ -35,6 +35,10 @@ Recommended additional future fields:
 source_file,consent_id,validation_id,export_id,requested_action,result,reason
 ```
 
+For enforceable decisions, an audit row should reference or be paired with a decision trace. The trace contains the rules, records, evidence classes, reasons, and unresolved uncertainties behind the row. The audit log says what happened; the decision trace explains why the governance system allowed, denied, held, revoked, or emergency-restricted the action.
+
+Denied, held, revoked, emergency-restricted, and invalidated lifecycle decisions must always produce both an audit row and a decision trace. These records are required even when no processing or export occurs, because the denial or hold is itself a governed decision.
+
 ## Audit Logging Behavior
 
 For each governed action:
@@ -49,6 +53,8 @@ For each governed action:
 7. Record result: allowed, denied, pending, revoked, emergency.
 8. Record concise reason.
 9. Link export_id, consent_id, or validation_id when relevant.
+10. Link decision_id when a decision trace exists.
+11. Record prior_state, requested_state, final_state, and transition_id for lifecycle decisions.
 ```
 
 ## Examples
@@ -76,4 +82,3 @@ Do not send audit logs to external services unless consent, privacy review, and 
 ## Limits
 
 Audit logs do not enforce governance by themselves. They provide accountability after or during decisions. Enforcement still requires gates, review, and disciplined handling.
-

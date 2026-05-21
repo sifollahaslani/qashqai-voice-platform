@@ -42,7 +42,13 @@ dataset_creation
 7. External provider use must be separately permitted.
 8. Temporary outputs must go to ignored local storage.
 9. Audit entry must be prepared.
+10. Decision trace must be prepared.
+11. Requested lifecycle transition must be legal.
 ```
+
+If any rule conflicts with a revocation, emergency restriction, cultural restriction, or unresolved reviewer disagreement, the more restrictive result applies.
+
+If metadata, consent, validation, rule, or lifecycle records cannot be parsed or validated, the gate result is `hold_for_review`. The hold must generate a decision trace and audit row.
 
 ## Example: Local Transcription
 
@@ -54,7 +60,8 @@ Allowed only if:
 - item is not revoked;
 - validation is not `restricted` or `revoked`;
 - raw audio stays local;
-- output is marked draft until human review.
+- output is marked draft until human review;
+- lifecycle transition remains local and reversible.
 
 ## Example: Translation
 
@@ -74,7 +81,8 @@ Allowed only if:
 - cultural validation allows embeddings;
 - derived artifacts are stored under ignored `derived/`;
 - no external vector service is used unless explicitly approved;
-- audit entry records model/tool and source item IDs.
+- audit entry records model/tool and source item IDs;
+- downstream invalidation behavior is defined before embeddings are created.
 
 ## Example: AI Training
 
@@ -103,8 +111,8 @@ Default result should be denial.
   "next_steps": [
     "do not process",
     "request new consent only if appropriate",
-    "complete cultural review before reconsidering"
+    "complete cultural review before reconsidering",
+    "write decision trace and audit row"
   ]
 }
 ```
-

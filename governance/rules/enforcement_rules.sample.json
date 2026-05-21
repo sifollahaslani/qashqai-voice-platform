@@ -1,0 +1,277 @@
+{
+  "ruleset_id": "qashqai-voice-enforcement-rules-v0.1",
+  "status": "sample",
+  "default_decision": "deny",
+  "precedence": [
+    "emergency_restriction",
+    "revocation",
+    "active_consent",
+    "cultural_validation",
+    "access_control",
+    "ai_use_policy",
+    "export_or_partner_terms",
+    "requested_action_default"
+  ],
+  "evidence_classes": [
+    "source_record",
+    "governance_record",
+    "review_finding",
+    "derived_artifact",
+    "machine_output",
+    "inference",
+    "external_claim"
+  ],
+  "actions": {
+    "transcription": {
+      "required_consent_field": "transcription_allowed",
+      "allowed_validation_statuses": [
+        "approved_family_only",
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": false
+    },
+    "translation": {
+      "required_consent_field": "translation_allowed",
+      "allowed_validation_statuses": [
+        "approved_family_only",
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": false
+    },
+    "summarization": {
+      "required_consent_field": "summarization_allowed",
+      "allowed_validation_statuses": [
+        "approved_family_only",
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "embedding": {
+      "required_consent_field": "embedding_allowed",
+      "allowed_validation_statuses": [
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "ai_training": {
+      "required_consent_field": "ai_training_allowed",
+      "allowed_validation_statuses": [
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "synthetic_voice": {
+      "required_consent_field": "synthetic_voice_allowed",
+      "allowed_validation_statuses": [
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "approved_research",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "institutional_export": {
+      "required_consent_field": "institutional_sharing_allowed",
+      "allowed_validation_statuses": [
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "research_export": {
+      "required_consent_field": "research_use_allowed",
+      "allowed_validation_statuses": [
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "public_release": {
+      "required_consent_field": "public_release_allowed",
+      "allowed_validation_statuses": [
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "approved_research",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "dataset_creation": {
+      "required_consent_field": "ai_training_allowed",
+      "allowed_validation_statuses": [
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "access_level_change": {
+      "required_consent_field": "access_level_policy_check",
+      "allowed_validation_statuses": [
+        "approved_family_only",
+        "approved_research",
+        "approved_public"
+      ],
+      "blocked_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "restricted",
+        "revoked"
+      ],
+      "human_approval_required_for_allow": true
+    },
+    "revocation_update": {
+      "required_consent_field": "not_applicable_restrictive_transition",
+      "allowed_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "approved_research",
+        "approved_public",
+        "restricted",
+        "revoked"
+      ],
+      "blocked_validation_statuses": [],
+      "human_approval_required_for_allow": true
+    },
+    "emergency_restriction": {
+      "required_consent_field": "not_applicable_restrictive_transition",
+      "allowed_validation_statuses": [
+        "pending",
+        "needs_linguistic_review",
+        "needs_translation_review",
+        "needs_cultural_review",
+        "approved_family_only",
+        "approved_research",
+        "approved_public",
+        "restricted",
+        "revoked"
+      ],
+      "blocked_validation_statuses": [],
+      "human_approval_required_for_allow": false
+    }
+  },
+  "global_blocks": [
+    {
+      "rule_id": "block_missing_metadata",
+      "condition": "required metadata field is missing",
+      "decision": "deny"
+    },
+    {
+      "rule_id": "block_missing_or_false_consent",
+      "condition": "required consent field is missing, blank, false, unclear, or conflicting",
+      "decision": "deny"
+    },
+    {
+      "rule_id": "block_revoked_consent",
+      "condition": "consent status is revoked or revocation record affects requested action",
+      "decision": "deny"
+    },
+    {
+      "rule_id": "block_sensitive_external_use",
+      "condition": "sensitivity level is restricted or sacred_or_not_for_publication and action leaves local custody",
+      "decision": "deny"
+    },
+    {
+      "rule_id": "hold_unresolved_disagreement",
+      "condition": "validation record contains unresolved material reviewer disagreement",
+      "decision": "hold"
+    },
+    {
+      "rule_id": "block_raw_audio_or_identity_export",
+      "condition": "export contains raw audio or identity record without explicit approval",
+      "decision": "deny"
+    }
+  ]
+}

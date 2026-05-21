@@ -1,0 +1,502 @@
+{
+  "ruleset_id": "qashqai-voice-lifecycle-transitions-v0.1",
+  "status": "sample",
+  "default_on_missing_rule": "hold_for_review",
+  "default_on_parser_or_validation_failure": "hold_for_review",
+  "trace_required_results": [
+    "denied",
+    "hold_for_review",
+    "revoked",
+    "emergency_restricted",
+    "invalidated"
+  ],
+  "audit_required_results": [
+    "denied",
+    "hold_for_review",
+    "revoked",
+    "emergency_restricted",
+    "invalidated"
+  ],
+  "artifact_classes": [
+    "source_audio",
+    "metadata_record",
+    "consent_record",
+    "validation_record",
+    "transcript",
+    "translation",
+    "summary",
+    "embedding",
+    "dataset",
+    "export_package",
+    "public_release",
+    "synthetic_voice_artifact",
+    "partner_copy",
+    "audit_record",
+    "decision_trace"
+  ],
+  "states": [
+    "created_unclassified",
+    "metadata_linked",
+    "consent_pending",
+    "consent_active",
+    "validation_pending",
+    "validated_restricted",
+    "validated_family_only",
+    "validated_research",
+    "validated_public",
+    "processing_local",
+    "derived_draft",
+    "derived_reviewed",
+    "export_staged",
+    "exported_external",
+    "published_public",
+    "dataset_registered",
+    "training_committed",
+    "synthetic_voice_committed",
+    "revocation_pending",
+    "revoked_blocked",
+    "downstream_invalidation_pending",
+    "invalidated",
+    "emergency_restricted",
+    "retired_preserved"
+  ],
+  "irreversible_states": [
+    "exported_external",
+    "published_public",
+    "training_committed",
+    "synthetic_voice_committed"
+  ],
+  "partially_irreversible_states": [
+    "dataset_registered",
+    "partner_copy"
+  ],
+  "transitions": [
+    {
+      "transition_id": "metadata.link",
+      "from": [
+        "created_unclassified"
+      ],
+      "to": "metadata_linked",
+      "artifact_classes": [
+        "source_audio",
+        "metadata_record"
+      ],
+      "reversibility": "reversible",
+      "required_checks": [
+        "metadata_required_fields",
+        "stable_ids_present"
+      ],
+      "human_approval_required": false,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "consent.activate",
+      "from": [
+        "consent_pending"
+      ],
+      "to": "consent_active",
+      "artifact_classes": [
+        "consent_record",
+        "metadata_record"
+      ],
+      "reversibility": "reversible_to_more_restrictive",
+      "required_checks": [
+        "consent_specific",
+        "consent_actor_recorded",
+        "revocable_status_recorded"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "validation.family_only",
+      "from": [
+        "validation_pending",
+        "metadata_linked",
+        "consent_active"
+      ],
+      "to": "validated_family_only",
+      "artifact_classes": [
+        "validation_record",
+        "metadata_record",
+        "transcript",
+        "translation"
+      ],
+      "reversibility": "reversible_to_more_restrictive",
+      "required_checks": [
+        "reviewer_authority_recorded",
+        "sensitivity_level_recorded",
+        "ai_use_recommendation_recorded"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "local.processing.start",
+      "from": [
+        "metadata_linked",
+        "consent_active",
+        "validated_family_only",
+        "validated_research",
+        "validated_public"
+      ],
+      "to": "processing_local",
+      "artifact_classes": [
+        "source_audio",
+        "transcript",
+        "translation",
+        "summary"
+      ],
+      "reversibility": "reversible",
+      "required_checks": [
+        "requested_permission_true",
+        "revocation_absent",
+        "local_storage_only"
+      ],
+      "human_approval_required": false,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "derived.reviewed",
+      "from": [
+        "derived_draft",
+        "processing_local"
+      ],
+      "to": "derived_reviewed",
+      "artifact_classes": [
+        "transcript",
+        "translation",
+        "summary"
+      ],
+      "reversibility": "reversible_to_more_restrictive",
+      "required_checks": [
+        "human_review_complete",
+        "uncertainty_recorded",
+        "inherited_restrictions_recorded"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "embedding.create",
+      "from": [
+        "derived_reviewed",
+        "validated_research",
+        "validated_public"
+      ],
+      "to": "derived_draft",
+      "artifact_classes": [
+        "embedding"
+      ],
+      "reversibility": "partially_irreversible",
+      "required_checks": [
+        "embedding_consent_true",
+        "cultural_validation_permits_embedding",
+        "local_or_external_vector_storage_recorded",
+        "revocation_propagation_plan_exists"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "export.stage",
+      "from": [
+        "derived_reviewed",
+        "validated_research",
+        "validated_public"
+      ],
+      "to": "export_staged",
+      "artifact_classes": [
+        "export_package"
+      ],
+      "reversibility": "reversible",
+      "required_checks": [
+        "export_manifest_complete",
+        "recipient_identified",
+        "purpose_documented",
+        "raw_audio_and_identity_excluded_or_explicitly_approved"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "export.release_external",
+      "from": [
+        "export_staged"
+      ],
+      "to": "exported_external",
+      "artifact_classes": [
+        "export_package",
+        "partner_copy"
+      ],
+      "reversibility": "partially_irreversible",
+      "required_checks": [
+        "institutional_or_research_consent_true",
+        "cultural_validation_permits_export",
+        "partner_terms_documented",
+        "revocation_contact_documented",
+        "downstream_invalidation_plan_exists"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "public.release",
+      "from": [
+        "export_staged",
+        "validated_public"
+      ],
+      "to": "published_public",
+      "artifact_classes": [
+        "public_release"
+      ],
+      "reversibility": "partially_irreversible",
+      "required_checks": [
+        "public_release_consent_true",
+        "validation_status_approved_public",
+        "final_human_release_approval",
+        "takedown_limit_recorded"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "dataset.register",
+      "from": [
+        "derived_reviewed",
+        "validated_research",
+        "validated_public"
+      ],
+      "to": "dataset_registered",
+      "artifact_classes": [
+        "dataset"
+      ],
+      "reversibility": "partially_irreversible",
+      "required_checks": [
+        "dataset_creation_consent_true",
+        "cultural_validation_permits_dataset",
+        "source_item_registry_complete",
+        "revocation_propagation_plan_exists"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "ai.training.commit",
+      "from": [
+        "dataset_registered"
+      ],
+      "to": "training_committed",
+      "artifact_classes": [
+        "dataset"
+      ],
+      "reversibility": "irreversible_or_not_fully_recallable",
+      "required_checks": [
+        "ai_training_consent_true",
+        "validation_explicitly_permits_training",
+        "model_use_terms_documented",
+        "untraining_limit_recorded"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "synthetic_voice.commit",
+      "from": [
+        "derived_reviewed",
+        "validated_public"
+      ],
+      "to": "synthetic_voice_committed",
+      "artifact_classes": [
+        "synthetic_voice_artifact"
+      ],
+      "reversibility": "irreversible_or_not_fully_recallable",
+      "required_checks": [
+        "synthetic_voice_consent_true",
+        "validation_explicitly_permits_synthetic_voice",
+        "voice_misuse_risk_reviewed",
+        "recall_limit_recorded"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "revocation.receive",
+      "from": [
+        "*"
+      ],
+      "to": "revocation_pending",
+      "artifact_classes": [
+        "*"
+      ],
+      "reversibility": "restrictive",
+      "required_checks": [
+        "revocation_request_recorded",
+        "affected_ids_identified_or_pending"
+      ],
+      "human_approval_required": false,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "revocation.block_future_use",
+      "from": [
+        "revocation_pending",
+        "consent_active",
+        "validated_family_only",
+        "validated_research",
+        "validated_public",
+        "processing_local",
+        "derived_reviewed",
+        "export_staged"
+      ],
+      "to": "revoked_blocked",
+      "artifact_classes": [
+        "*"
+      ],
+      "reversibility": "restrictive",
+      "required_checks": [
+        "revocation_scope_interpreted",
+        "future_use_block_applied",
+        "dependent_artifacts_queued_for_invalidation"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "downstream.invalidate_pending",
+      "from": [
+        "exported_external",
+        "published_public",
+        "dataset_registered",
+        "training_committed",
+        "synthetic_voice_committed"
+      ],
+      "to": "downstream_invalidation_pending",
+      "artifact_classes": [
+        "embedding",
+        "dataset",
+        "export_package",
+        "public_release",
+        "synthetic_voice_artifact",
+        "partner_copy"
+      ],
+      "reversibility": "restrictive",
+      "required_checks": [
+        "source_revocation_linked",
+        "partner_or_public_location_identified",
+        "technical_recall_limits_recorded"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "downstream.invalidated",
+      "from": [
+        "downstream_invalidation_pending",
+        "revoked_blocked",
+        "emergency_restricted"
+      ],
+      "to": "invalidated",
+      "artifact_classes": [
+        "*"
+      ],
+      "reversibility": "restrictive",
+      "required_checks": [
+        "invalidation_action_recorded",
+        "remaining_limitations_recorded",
+        "future_use_block_applied"
+      ],
+      "human_approval_required": true,
+      "decision_trace_required": true,
+      "audit_required": true
+    },
+    {
+      "transition_id": "emergency.restrict",
+      "from": [
+        "*"
+      ],
+      "to": "emergency_restricted",
+      "artifact_classes": [
+        "*"
+      ],
+      "reversibility": "restrictive",
+      "required_checks": [
+        "emergency_reason_recorded",
+        "responsible_actor_recorded",
+        "followup_review_required"
+      ],
+      "human_approval_required": false,
+      "decision_trace_required": true,
+      "audit_required": true
+    }
+  ],
+  "illegal_transitions": [
+    {
+      "from": [
+        "revoked_blocked",
+        "invalidated",
+        "emergency_restricted"
+      ],
+      "to": [
+        "exported_external",
+        "published_public",
+        "dataset_registered",
+        "training_committed",
+        "synthetic_voice_committed"
+      ],
+      "decision": "denied",
+      "reason": "restrictive state cannot transition to broader or irreversible use"
+    },
+    {
+      "from": [
+        "validation_pending",
+        "validated_restricted",
+        "validated_family_only"
+      ],
+      "to": [
+        "exported_external",
+        "published_public",
+        "dataset_registered",
+        "training_committed",
+        "synthetic_voice_committed"
+      ],
+      "decision": "denied",
+      "reason": "cultural validation state does not permit external or high-risk transition"
+    }
+  ],
+  "revocation_propagation": {
+    "trigger_states": [
+      "revocation_pending",
+      "revoked_blocked"
+    ],
+    "dependent_artifact_states_to_review": [
+      "processing_local",
+      "derived_draft",
+      "derived_reviewed",
+      "export_staged",
+      "exported_external",
+      "published_public",
+      "dataset_registered",
+      "training_committed",
+      "synthetic_voice_committed"
+    ],
+    "required_downstream_action": "move_to_downstream_invalidation_pending_or_invalidated",
+    "must_record_limits_to_recall": true,
+    "must_notify_partners_when_applicable": true
+  }
+}

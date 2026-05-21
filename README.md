@@ -73,7 +73,7 @@ Key files and folders:
 - `audit_log.csv` records governance actions, review decisions, and traceability events.
 - `metadata_templates/metadata.sample.json` defines a practical recording metadata template.
 - `metadata_templates/validation.sample.json` defines a practical cultural validation template.
-- `governance/` is reserved for policy documents such as charter, privacy policy, AI-use policy, access levels, and cultural validation protocol.
+- `governance/` contains policy documents and enforcement infrastructure, including operational precedence, lifecycle-state rules, rule samples, and decision-trace schemas.
 - `audio/` contains early prototype voice-recording code.
 - `QashqAI_Archive/` contains early archive materials and governance notes from the initial cultural archive structure.
 
@@ -87,7 +87,9 @@ Development should remain local-first and governance-aware:
 4. Consent should be recorded in `consent_ledger.csv`.
 5. Cultural validation should be recorded before any external use.
 6. Exports, datasets, model inputs, embeddings, or institutional packages should be created only after checking consent and review status.
-7. Governance actions should be recorded in `audit_log.csv`.
+7. Governed actions should produce a decision trace when they allow, deny, hold, revoke, or emergency-restrict a requested use.
+8. Lifecycle transitions should identify prior state, requested state, final state, reversibility, and downstream invalidation requirements.
+9. Governance actions should be recorded in `audit_log.csv`.
 
 Application code changes should not weaken privacy, consent, or review requirements.
 
