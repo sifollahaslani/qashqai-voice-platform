@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, List, Optional
 
 import anthropic
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -160,6 +160,14 @@ class LinguisticEntry(LinguisticEntryCreate):
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _ENTRIES_FILE = _DATA_DIR / "entries.json"
 
+# Audit log (Step 6) — append-only JSONL.
+# One JSON object per line, never rewritten, never truncated. Each successful
+# /entries write produces one audit line; if audit append fails, the API
+# surfaces a 500 with the persisted entry_id so the operator can reconcile
+# rather than silently lose the audit record.
+_AUDIT_LOG_FILE = _DATA_DIR / "audit_log.jsonl"
+AUDIT_SCHEMA_VERSION = 1
+
 
 def _read_entries() -> List[dict]:
     """Return stored entries, or [] when the file does not exist yet.
@@ -179,6 +187,34 @@ def _read_entries() -> List[dict]:
         raise RuntimeError(
             f"entries.json could not be read (OS error): {exc}"
         ) from exc
+
+
+def _append_audit(event: dict) -> None:
+    """Append a single JSON object as one line to the audit log (Step 6).
+
+    Append-only contract:
+      - opens in "a" mode (positions at EOF, never truncates)
+      - writes exactly one line: `json.dumps(event) + "\\n"`
+      - flush() + os.fsync() to durably commit before returning
+      - no rename, no temp file — the file's prior contents are never
+        touched, only extended
+
+    Why no temp+rename like _write_entries? An append is not a replace.
+    The prior bytes of the audit log are the audit record; we must extend
+    them in place. Crash mid-append may leave a partial trailing line —
+    JSONL readers are expected to detect and ignore lines that fail to
+    parse as JSON, which is the standard JSONL recovery convention.
+
+    Caller (create_entry) catches OSError and surfaces it as a 500 with
+    the persisted entry_id named, so an audit-write failure cannot be
+    silently swallowed.
+    """
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(event, ensure_ascii=False) + "\n"
+    with open(_AUDIT_LOG_FILE, "a", encoding="utf-8") as fh:
+        fh.write(line)
+        fh.flush()
+        os.fsync(fh.fileno())
 
 
 def _write_entries(entries: List[dict]) -> None:
@@ -432,7 +468,7 @@ async def chat_api(msg: Message):
 # ---------- Linguistic entry endpoints ----------
 
 @app.post("/entries", response_model=LinguisticEntry, status_code=201)
-def create_entry(payload: LinguisticEntryCreate):
+def create_entry(payload: LinguisticEntryCreate, request: Request):
     try:
         entries = _read_entries()
     except RuntimeError as exc:
@@ -445,7 +481,37 @@ def create_entry(payload: LinguisticEntryCreate):
         payload_dict["created_at"] = _utc_now_iso()
     entry = LinguisticEntry(id=str(uuid.uuid4()), **payload_dict)
     entries.append(entry.model_dump())
-    _write_entries(entries)
+    _write_entries(entries)  # atomic (Step 5)
+
+    # Audit append AFTER successful entry write (Step 6). Ordering rationale:
+    # if we appended audit first and the entry write then failed, the audit
+    # would reference a phantom entry. Post-write audit accepts a narrow
+    # inconsistency window in exchange for a clean invariant: every audit
+    # line refers to an entry that definitely exists on disk.
+    #
+    # If audit append raises, the entry IS persisted — we surface a 500 that
+    # names the entry_id explicitly so the operator can reconcile rather
+    # than the audit failure being silently swallowed. This is "loud, not
+    # corrupting": entries are intact; audit has a known, surfaced gap.
+    audit_event = {
+        "audit_schema_version": AUDIT_SCHEMA_VERSION,
+        "ts": _utc_now_iso(),
+        "op": "create_entry",
+        "entry_id": entry.id,
+        "entry_schema_version": entry.entry_schema_version,
+        "request_origin": (request.client.host if request.client else "unknown"),
+    }
+    try:
+        _append_audit(audit_event)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Entry {entry.id} was persisted but audit log append failed: {exc}. "
+                f"Reconcile manually before retrying to avoid a duplicate entry."
+            ),
+        ) from exc
+
     return entry
 
 

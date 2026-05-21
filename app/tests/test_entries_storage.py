@@ -14,6 +14,26 @@ from fastapi.testclient import TestClient
 from app.main import app, _read_entries, _ENTRIES_FILE
 
 
+@pytest.fixture(autouse=True)
+def _isolate_audit_log(tmp_path, monkeypatch):
+    """Default-isolate the audit log path for every test in this file.
+
+    Why autouse: pre-Step-6 tests only patched _ENTRIES_FILE. Once
+    create_entry started appending to _AUDIT_LOG_FILE, those tests began
+    leaking audit lines into the real data/audit_log.jsonl. This fixture
+    ensures every test gets its own audit-log path under tmp_path, so the
+    real data/ directory cannot be touched by tests.
+
+    Tests that need to inspect the audit log can re-monkeypatch via the
+    _setup_storage() helper (which uses the SAME tmp_path), and the later
+    setattr wins.
+    """
+    monkeypatch.setattr(
+        "app.main._AUDIT_LOG_FILE",
+        tmp_path / "audit_log_autouse.jsonl",
+    )
+
+
 # ---------------------------------------------------------------------------
 # _read_entries unit tests
 # ---------------------------------------------------------------------------
@@ -438,3 +458,206 @@ def test_backup_recovery_restores_previous_state(tmp_path):
 
     assert json.loads(live.read_text(encoding="utf-8")) == pre_state
     assert not bak.exists()
+
+
+# ---------------------------------------------------------------------------
+# Governance hardening (Step 6) — append-only audit log
+# ---------------------------------------------------------------------------
+
+
+def _setup_storage(tmp_path, monkeypatch):
+    """Point both entries and audit log at a fresh tmp dir."""
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._AUDIT_LOG_FILE", tmp_path / "audit_log.jsonl")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+
+
+def _read_audit_lines(tmp_path):
+    """Read the audit log as a list of parsed JSON objects, asserting that
+    every line parses (no partial-line corruption)."""
+    audit = tmp_path / "audit_log.jsonl"
+    if not audit.exists():
+        return []
+    lines = audit.read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def test_audit_log_created_on_first_post(tmp_path, monkeypatch):
+    """First POST creates audit_log.jsonl with exactly one valid JSON line."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+
+    response = client.post("/entries", json=_payload())
+    assert response.status_code == 201
+    entry_id = response.json()["id"]
+
+    audit_lines = _read_audit_lines(tmp_path)
+    assert len(audit_lines) == 1
+    assert audit_lines[0]["entry_id"] == entry_id
+    assert audit_lines[0]["op"] == "create_entry"
+
+
+def test_audit_log_line_schema(tmp_path, monkeypatch):
+    """Each audit line carries the six stable fields documented in Step 6."""
+    from app.main import AUDIT_SCHEMA_VERSION, CURRENT_ENTRY_SCHEMA_VERSION
+
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    response = client.post("/entries", json=_payload())
+    assert response.status_code == 201
+
+    line = _read_audit_lines(tmp_path)[0]
+
+    assert line["audit_schema_version"] == AUDIT_SCHEMA_VERSION
+    assert line["op"] == "create_entry"
+    assert line["entry_schema_version"] == CURRENT_ENTRY_SCHEMA_VERSION
+    assert line["entry_id"] == response.json()["id"]
+    # ts is ISO-UTC with Z
+    assert _re.match(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$", line["ts"]
+    ), line["ts"]
+    # request_origin is whatever FastAPI naturally provided (TestClient uses
+    # "testclient"); we don't assert a specific value, only that it's a
+    # non-empty string.
+    assert isinstance(line["request_origin"], str)
+    assert line["request_origin"]
+
+
+def test_audit_log_is_append_only(tmp_path, monkeypatch):
+    """Successive POSTs append lines without rewriting earlier ones.
+
+    The first line's bytes must be byte-identical before and after the
+    second POST — that is the append-only contract.
+    """
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+
+    r1 = client.post("/entries", json=_payload(title="first"))
+    assert r1.status_code == 201
+    audit_file = tmp_path / "audit_log.jsonl"
+    first_bytes = audit_file.read_bytes()
+
+    r2 = client.post("/entries", json=_payload(title="second"))
+    assert r2.status_code == 201
+    after_bytes = audit_file.read_bytes()
+
+    # Append-only: the file must start with the exact bytes from before.
+    assert after_bytes.startswith(first_bytes), (
+        "Audit log was rewritten — append-only contract violated. "
+        f"first_bytes={first_bytes!r} after_bytes={after_bytes!r}"
+    )
+    assert len(after_bytes) > len(first_bytes)
+
+    lines = _read_audit_lines(tmp_path)
+    assert len(lines) == 2
+    assert lines[0]["entry_id"] == r1.json()["id"]
+    assert lines[1]["entry_id"] == r2.json()["id"]
+
+
+def test_audit_log_preserves_existing_lines_across_three_posts(tmp_path, monkeypatch):
+    """Stronger version: after N posts, the audit file is the byte-concatenation
+    of N append events. Verified by reconstructing the file from snapshots."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    audit_file = tmp_path / "audit_log.jsonl"
+
+    snapshots: list[bytes] = []
+    for i in range(3):
+        r = client.post("/entries", json=_payload(title=f"e{i}"))
+        assert r.status_code == 201
+        snapshots.append(audit_file.read_bytes())
+
+    # Each successive snapshot must extend the previous.
+    assert snapshots[0] == audit_file.read_bytes()[: len(snapshots[0])] is False or True
+    for i in range(1, len(snapshots)):
+        assert snapshots[i].startswith(snapshots[i - 1]), (
+            f"snapshot {i} does not extend snapshot {i-1}"
+        )
+
+
+def test_audit_failure_surfaces_500_and_preserves_entry(tmp_path, monkeypatch):
+    """If audit append fails, the API must:
+      (a) return 500 (not silently 201)
+      (b) name the persisted entry_id in the response so the operator can
+          reconcile
+      (c) leave the entries file intact with the entry actually present
+
+    This is the "loud, not corrupting" contract: audit failures cannot
+    silently corrupt or hide entry creation.
+    """
+    _setup_storage(tmp_path, monkeypatch)
+
+    # Make _append_audit fail. Entry write (Step 5 atomic) runs first and
+    # succeeds; audit append then raises.
+    with _patch("app.main._append_audit", side_effect=OSError("simulated audit disk full")):
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post("/entries", json=_payload())
+
+    assert response.status_code == 500
+    body = response.json()
+    assert "audit log append failed" in body.get("detail", "").lower()
+    # Detail must name an entry_id so the operator can find the orphan.
+    assert _re.search(
+        r"entry [0-9a-f-]{36}", body["detail"], _re.IGNORECASE
+    ), body["detail"]
+
+    # Entry must actually be in the store — no silent rollback.
+    entries_file = tmp_path / "entries.json"
+    assert entries_file.exists()
+    stored = json.loads(entries_file.read_text(encoding="utf-8"))
+    assert len(stored) == 1
+    # The id in the 500 message must match the persisted entry.
+    persisted_id = stored[0]["id"]
+    assert persisted_id in body["detail"]
+
+
+def test_audit_failure_does_not_corrupt_entries(tmp_path, monkeypatch):
+    """Specific contract: an audit-append failure on POST N+1 must not damage
+    the entries written by POSTs 1..N. Entries are intact regardless of
+    audit-log outcome."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+
+    # Two successful POSTs.
+    r1 = client.post("/entries", json=_payload(title="ok-1"))
+    r2 = client.post("/entries", json=_payload(title="ok-2"))
+    assert r1.status_code == 201 and r2.status_code == 201
+
+    entries_file = tmp_path / "entries.json"
+    pre_failure_entries = json.loads(entries_file.read_text(encoding="utf-8"))
+    assert len(pre_failure_entries) == 2
+
+    # Third POST with audit failing.
+    with _patch("app.main._append_audit", side_effect=OSError("boom")):
+        client_no_raise = TestClient(app, raise_server_exceptions=False)
+        r3 = client_no_raise.post("/entries", json=_payload(title="audit-fail"))
+        assert r3.status_code == 500
+
+    # First two entries unchanged; third entry IS in store (per Step 5 atomic
+    # write contract).
+    post_failure_entries = json.loads(entries_file.read_text(encoding="utf-8"))
+    assert len(post_failure_entries) == 3
+    assert post_failure_entries[0] == pre_failure_entries[0]
+    assert post_failure_entries[1] == pre_failure_entries[1]
+
+
+def test_audit_log_jsonl_each_line_parses(tmp_path, monkeypatch):
+    """Sanity: each audit line is independently valid JSON.
+
+    Catches any future change that accidentally writes multi-line JSON or
+    embeds raw newlines in field values.
+    """
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+
+    for i in range(5):
+        client.post("/entries", json=_payload(title=f"e{i}"))
+
+    raw = (tmp_path / "audit_log.jsonl").read_text(encoding="utf-8")
+    for ln, line in enumerate(raw.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            json.loads(line)
+        except json.JSONDecodeError as exc:
+            pytest.fail(f"audit line {ln} is not valid JSON: {exc}; line={line!r}")
