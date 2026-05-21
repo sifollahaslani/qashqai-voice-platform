@@ -1,13 +1,15 @@
+import hmac
 import json
 import os
 import re
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, List, Optional
 
 import anthropic
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -166,7 +168,19 @@ _ENTRIES_FILE = _DATA_DIR / "entries.json"
 # surfaces a 500 with the persisted entry_id so the operator can reconcile
 # rather than silently lose the audit record.
 _AUDIT_LOG_FILE = _DATA_DIR / "audit_log.jsonl"
-AUDIT_SCHEMA_VERSION = 1
+
+# Audit schema version. Bumped Step 6 → Step 7: create_entry events gained
+# the `auth_mode` field, and a new `auth_denied` op was introduced. The bump
+# is forward-only — no pre-Step-7 audit data exists on disk (the Step 6
+# leak was cleaned and never had real lines).
+AUDIT_SCHEMA_VERSION = 2
+
+# Step 7 — shared-secret auth + localhost allowlist.
+# Read by require_api_token() at request time (not module load) so tests can
+# monkeypatch env vars cleanly.
+_AUTH_TOKEN_ENV = "QV_API_TOKEN"
+_AUTH_HEADER_NAME = "X-QV-Auth-Token"
+_LOCAL_ORIGINS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
 
 def _read_entries() -> List[dict]:
@@ -187,6 +201,95 @@ def _read_entries() -> List[dict]:
         raise RuntimeError(
             f"entries.json could not be read (OS error): {exc}"
         ) from exc
+
+
+def _audit_safe(event: dict) -> None:
+    """Best-effort audit append (Step 7) — used on the auth-deny path.
+
+    Wraps _append_audit and swallows OSError after writing a warning to
+    stderr. Rationale: the security decision (deny) must stand regardless
+    of audit availability. Letting an audit-write failure abort the deny
+    flow would turn disk-full or permission-denied into a vehicle for
+    bypassing the deny entirely.
+
+    Audit-write failures on this path are still loud — stderr is captured
+    by every reasonable process supervisor and surfaces as an operational
+    incident — but they do not change what the API returns to the caller.
+
+    On the entry-creation path we use _append_audit directly (raising
+    OSError → HTTPException 500) because there the operation has already
+    succeeded and the caller MUST be told there's a recoverable gap.
+    """
+    try:
+        _append_audit(event)
+    except OSError as exc:
+        print(
+            f"[audit-warn] {event.get('op','?')}: audit append failed: {exc}. "
+            f"Event lost: {json.dumps(event, ensure_ascii=False)}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def require_api_token(
+    request: Request,
+    x_qv_auth_token: Optional[str] = Header(None, alias=_AUTH_HEADER_NAME),
+) -> str:
+    """Shared-secret auth dependency (Step 7). Returns auth_mode string.
+
+    Configuration:
+      - QV_API_TOKEN env var set       -> require header X-QV-Auth-Token to
+                                          match (constant-time compare).
+                                          Success returns "token".
+      - QV_API_TOKEN env var unset     -> allow only local origins
+                                          (127.0.0.1 / ::1 / localhost /
+                                          testclient). Success returns
+                                          "localhost:<host>".
+    Fail-closed: any other situation raises HTTPException 401.
+
+    Every denial writes an `auth_denied` audit event before raising.
+    Audit failure during deny is best-effort (stderr) so a broken audit
+    disk cannot bypass the deny decision.
+    """
+    expected = os.environ.get(_AUTH_TOKEN_ENV)
+    origin = request.client.host if request.client else "unknown"
+
+    if expected:
+        provided = x_qv_auth_token or ""
+        if not hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
+            _audit_safe({
+                "audit_schema_version": AUDIT_SCHEMA_VERSION,
+                "ts": _utc_now_iso(),
+                "op": "auth_denied",
+                "request_origin": origin,
+                "reason": "missing_or_invalid_token",
+            })
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required.",
+                headers={"WWW-Authenticate": f'{_AUTH_HEADER_NAME} realm="QashqAI"'},
+            )
+        return "token"
+
+    # No token configured → localhost-only fallback.
+    if origin in _LOCAL_ORIGINS:
+        return f"localhost:{origin}"
+
+    _audit_safe({
+        "audit_schema_version": AUDIT_SCHEMA_VERSION,
+        "ts": _utc_now_iso(),
+        "op": "auth_denied",
+        "request_origin": origin,
+        "reason": "no_token_configured_remote_origin",
+    })
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            f"Authentication not configured ({_AUTH_TOKEN_ENV} unset) and "
+            f"request is from non-local origin {origin!r}. Set "
+            f"{_AUTH_TOKEN_ENV} to enable remote access."
+        ),
+    )
 
 
 def _append_audit(event: dict) -> None:
@@ -468,7 +571,11 @@ async def chat_api(msg: Message):
 # ---------- Linguistic entry endpoints ----------
 
 @app.post("/entries", response_model=LinguisticEntry, status_code=201)
-def create_entry(payload: LinguisticEntryCreate, request: Request):
+def create_entry(
+    payload: LinguisticEntryCreate,
+    request: Request,
+    auth_mode: str = Depends(require_api_token),
+):
     try:
         entries = _read_entries()
     except RuntimeError as exc:
@@ -500,6 +607,7 @@ def create_entry(payload: LinguisticEntryCreate, request: Request):
         "entry_id": entry.id,
         "entry_schema_version": entry.entry_schema_version,
         "request_origin": (request.client.host if request.client else "unknown"),
+        "auth_mode": auth_mode,  # Step 7 — how this request was authenticated
     }
     try:
         _append_audit(audit_event)
@@ -516,7 +624,7 @@ def create_entry(payload: LinguisticEntryCreate, request: Request):
 
 
 @app.get("/entries", response_model=List[LinguisticEntry])
-def list_entries():
+def list_entries(auth_mode: str = Depends(require_api_token)):
     try:
         return _read_entries()
     except RuntimeError as exc:

@@ -16,22 +16,23 @@ from app.main import app, _read_entries, _ENTRIES_FILE
 
 @pytest.fixture(autouse=True)
 def _isolate_audit_log(tmp_path, monkeypatch):
-    """Default-isolate the audit log path for every test in this file.
+    """Default-isolate the audit log path AND ensure QV_API_TOKEN is unset.
 
-    Why autouse: pre-Step-6 tests only patched _ENTRIES_FILE. Once
-    create_entry started appending to _AUDIT_LOG_FILE, those tests began
-    leaking audit lines into the real data/audit_log.jsonl. This fixture
-    ensures every test gets its own audit-log path under tmp_path, so the
-    real data/ directory cannot be touched by tests.
+    Why autouse:
+      - Pre-Step-6 tests only patched _ENTRIES_FILE, leaking audit lines
+        into the real data/audit_log.jsonl until the leak was caught.
+      - Step 7 added env-var-driven auth; an inherited QV_API_TOKEN from
+        the operator's shell would change every test's behaviour silently.
 
-    Tests that need to inspect the audit log can re-monkeypatch via the
-    _setup_storage() helper (which uses the SAME tmp_path), and the later
-    setattr wins.
+    Both concerns are closed here: every test gets a fresh audit path
+    under tmp_path AND a guaranteed-empty auth env. Tests that want token
+    auth can monkeypatch.setenv themselves.
     """
     monkeypatch.setattr(
         "app.main._AUDIT_LOG_FILE",
         tmp_path / "audit_log_autouse.jsonl",
     )
+    monkeypatch.delenv("QV_API_TOKEN", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -661,3 +662,185 @@ def test_audit_log_jsonl_each_line_parses(tmp_path, monkeypatch):
             json.loads(line)
         except json.JSONDecodeError as exc:
             pytest.fail(f"audit line {ln} is not valid JSON: {exc}; line={line!r}")
+
+
+# ---------------------------------------------------------------------------
+# Governance hardening (Step 7) — shared-secret auth + localhost fallback
+# ---------------------------------------------------------------------------
+
+
+def test_post_works_in_localhost_mode_when_token_unset(tmp_path, monkeypatch):
+    """No QV_API_TOKEN env, TestClient origin (testclient) -> 201.
+    Audit line records auth_mode='localhost:testclient'."""
+    _setup_storage(tmp_path, monkeypatch)
+    # autouse fixture already delenv'd QV_API_TOKEN
+    client = TestClient(app)
+    response = client.post("/entries", json=_payload())
+    assert response.status_code == 201
+
+    lines = _read_audit_lines(tmp_path)
+    assert len(lines) == 1
+    assert lines[0]["op"] == "create_entry"
+    assert lines[0]["auth_mode"] == "localhost:testclient"
+
+
+def test_post_with_correct_token_succeeds(tmp_path, monkeypatch):
+    """QV_API_TOKEN set + correct header -> 201, auth_mode='token'."""
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setenv("QV_API_TOKEN", "s3cret-token")
+
+    client = TestClient(app)
+    response = client.post(
+        "/entries",
+        json=_payload(),
+        headers={"X-QV-Auth-Token": "s3cret-token"},
+    )
+    assert response.status_code == 201
+
+    lines = _read_audit_lines(tmp_path)
+    assert lines[-1]["auth_mode"] == "token"
+
+
+def test_post_with_wrong_token_denied(tmp_path, monkeypatch):
+    """QV_API_TOKEN set + wrong header -> 401, no entry created."""
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setenv("QV_API_TOKEN", "correct-token")
+
+    client = TestClient(app)
+    response = client.post(
+        "/entries",
+        json=_payload(),
+        headers={"X-QV-Auth-Token": "wrong-token"},
+    )
+    assert response.status_code == 401
+
+    # Entry NOT persisted
+    entries_file = tmp_path / "entries.json"
+    if entries_file.exists():
+        assert json.loads(entries_file.read_text(encoding="utf-8")) == []
+
+
+def test_post_without_token_when_required_denied(tmp_path, monkeypatch):
+    """QV_API_TOKEN set + no header -> 401."""
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setenv("QV_API_TOKEN", "needed")
+
+    client = TestClient(app)
+    response = client.post("/entries", json=_payload())
+    assert response.status_code == 401
+    # Standards-y: server advertises which auth scheme it expects
+    assert "X-QV-Auth-Token" in response.headers.get("www-authenticate", "")
+
+
+def test_get_entries_also_gated(tmp_path, monkeypatch):
+    """The auth dependency must apply to reads as well as writes."""
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setenv("QV_API_TOKEN", "needed")
+
+    client = TestClient(app)
+    response = client.get("/entries")
+    assert response.status_code == 401
+
+
+def test_localhost_fallback_denies_remote_origin(tmp_path, monkeypatch):
+    """No QV_API_TOKEN + origin not in _LOCAL_ORIGINS -> 401.
+
+    Verifies the fail-closed behaviour of the localhost fallback. We narrow
+    the local set so the TestClient ("testclient") falls outside it,
+    simulating a remote caller without needing to fake transport.
+    """
+    _setup_storage(tmp_path, monkeypatch)
+    # Localhost set with 'testclient' removed.
+    monkeypatch.setattr("app.main._LOCAL_ORIGINS", frozenset({"127.0.0.1", "::1"}))
+
+    client = TestClient(app)
+    response = client.post("/entries", json=_payload())
+    assert response.status_code == 401
+    assert "non-local" in response.json()["detail"].lower()
+
+
+def test_auth_deny_produces_audit_event(tmp_path, monkeypatch):
+    """Every denial must leave an audit line of op='auth_denied' with a
+    reason and the request_origin."""
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setenv("QV_API_TOKEN", "x")
+
+    client = TestClient(app)
+    client.post("/entries", json=_payload(), headers={"X-QV-Auth-Token": "wrong"})
+
+    lines = _read_audit_lines(tmp_path)
+    assert any(l["op"] == "auth_denied" for l in lines), lines
+    deny = next(l for l in lines if l["op"] == "auth_denied")
+    assert deny["reason"] == "missing_or_invalid_token"
+    assert deny["request_origin"]  # non-empty
+    assert deny["audit_schema_version"] == 2
+
+
+def test_auth_deny_for_remote_origin_audited(tmp_path, monkeypatch):
+    """The 'no token configured + remote' deny path must also audit."""
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setattr("app.main._LOCAL_ORIGINS", frozenset({"127.0.0.1", "::1"}))
+
+    client = TestClient(app)
+    client.post("/entries", json=_payload())
+
+    lines = _read_audit_lines(tmp_path)
+    deny = next(l for l in lines if l["op"] == "auth_denied")
+    assert deny["reason"] == "no_token_configured_remote_origin"
+
+
+def test_audit_failure_during_deny_does_not_change_decision(tmp_path, monkeypatch, capsys):
+    """If audit append fails while denying, the deny still happens (401).
+
+    The audit gap is surfaced to stderr (operator visibility), but the
+    security decision is NOT conditional on audit availability."""
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setenv("QV_API_TOKEN", "x")
+
+    with _patch("app.main._append_audit", side_effect=OSError("simulated audit disk full")):
+        client = TestClient(app)
+        response = client.post(
+            "/entries",
+            json=_payload(),
+            headers={"X-QV-Auth-Token": "wrong"},
+        )
+
+    # The deny stands
+    assert response.status_code == 401
+
+    # Audit failure was logged to stderr (operator visibility)
+    captured = capsys.readouterr()
+    assert "audit-warn" in captured.err
+    assert "auth_denied" in captured.err
+
+
+def test_constant_time_compare_used_for_token(tmp_path, monkeypatch):
+    """Verify hmac.compare_digest is the comparator (not ==).
+
+    Indirect check: spy on app.main.hmac.compare_digest and ensure
+    require_api_token invokes it on the token comparison path.
+    """
+    _setup_storage(tmp_path, monkeypatch)
+    monkeypatch.setenv("QV_API_TOKEN", "abc")
+
+    # Capture the real implementation BEFORE patching app.main.hmac, otherwise
+    # the spy would call itself.
+    from hmac import compare_digest as _real_compare_digest
+
+    calls = []
+
+    def _spy(a, b):
+        calls.append((a, b))
+        return _real_compare_digest(a, b)
+
+    monkeypatch.setattr("app.main.hmac.compare_digest", _spy)
+    client = TestClient(app)
+    response = client.post(
+        "/entries",
+        json=_payload(),
+        headers={"X-QV-Auth-Token": "abc"},
+    )
+    assert response.status_code == 201
+
+    assert calls, "hmac.compare_digest was not invoked — token compare may be using =="
+    assert calls[0] == (b"abc", b"abc")
