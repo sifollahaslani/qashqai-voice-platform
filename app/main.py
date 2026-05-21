@@ -2,6 +2,7 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, List, Optional
 
@@ -56,6 +57,17 @@ VisibilityStatus = Literal["public", "internal", "blocked"]
 SPEAKER_ID_PATTERN = r"^SPK-\d{3,}$"
 _SPEAKER_ID_RE = re.compile(SPEAKER_ID_PATTERN)
 
+# Current entry schema version. Bumped when a breaking change to the
+# LinguisticEntry shape lands (e.g. enum vocabulary, field rename, removal).
+# Persisted on every record so future migrations can identify what shape
+# each record was written under. See scripts/migrate_entries_v*.py.
+CURRENT_ENTRY_SCHEMA_VERSION = 1
+
+
+def _utc_now_iso() -> str:
+    """Return current UTC time as RFC 3339 / ISO 8601 string with 'Z' suffix."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
 
 class LinguisticEntryCreate(BaseModel):
     # Governance hardening (Step 1): reject unknown fields at the request boundary
@@ -80,6 +92,23 @@ class LinguisticEntryCreate(BaseModel):
     ai_generation_allowed: bool = False
     visibility_status: VisibilityStatus
     notes: Optional[str] = None
+
+    # Audit metadata (Step 5) — minimal pair, no actor identity yet.
+    #
+    # created_at:
+    #   RFC 3339 / ISO 8601 UTC timestamp. The POST handler sets this on
+    #   creation if the caller omits it. `None` is the explicit marker for
+    #   "legacy / unknown" — used by the v4 migration for records that
+    #   predate this field. Auto-population is documented and tested
+    #   (test_post_sets_created_at_automatically); callers can pass an
+    #   explicit value to override (test_post_accepts_explicit_created_at).
+    #
+    # entry_schema_version:
+    #   Schema version this record was written under. Defaulted to the
+    #   module-level CURRENT_ENTRY_SCHEMA_VERSION on new records. Future
+    #   migrations read this to decide what to do per record.
+    created_at: Optional[str] = None
+    entry_schema_version: int = CURRENT_ENTRY_SCHEMA_VERSION
 
     @field_validator("title", "language", "speaker_id")
     @classmethod
@@ -153,11 +182,28 @@ def _read_entries() -> List[dict]:
 
 
 def _write_entries(entries: List[dict]) -> None:
+    """Atomically write entries to disk (Step 5).
+
+    Flow:
+      1. Serialize JSON to a sibling temp file in the same directory.
+      2. flush() + os.fsync() to force bytes from buffer to disk.
+      3. os.replace(tmp, real) — atomic rename on POSIX and Windows
+         (Python 3.3+ on Windows maps this to MoveFileEx with
+         MOVEFILE_REPLACE_EXISTING).
+
+    Crash semantics: if any step before the os.replace fails (process killed,
+    disk full, permission denied), the original file is unchanged. A stale
+    `.tmp` file may remain — the next successful write overwrites it. There
+    is no partial-state window where readers see truncated JSON.
+    """
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    _ENTRIES_FILE.write_text(
-        json.dumps(entries, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    tmp = _ENTRIES_FILE.with_name(_ENTRIES_FILE.name + ".tmp")
+    data = json.dumps(entries, ensure_ascii=False, indent=2)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, _ENTRIES_FILE)
 
 
 # ---------- Language detection ----------
@@ -391,7 +437,13 @@ def create_entry(payload: LinguisticEntryCreate):
         entries = _read_entries()
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    entry = LinguisticEntry(id=str(uuid.uuid4()), **payload.model_dump())
+    # Set created_at if the caller omitted it. Documented and tested behaviour
+    # (not a hidden default) — see test_post_sets_created_at_automatically and
+    # test_post_accepts_explicit_created_at.
+    payload_dict = payload.model_dump()
+    if payload_dict.get("created_at") is None:
+        payload_dict["created_at"] = _utc_now_iso()
+    entry = LinguisticEntry(id=str(uuid.uuid4()), **payload_dict)
     entries.append(entry.model_dump())
     _write_entries(entries)
     return entry

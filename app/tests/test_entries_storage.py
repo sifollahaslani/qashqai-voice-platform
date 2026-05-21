@@ -4,6 +4,7 @@ Run with:  pytest app/tests/test_entries_storage.py -v
 Requires:  pip install pytest httpx fastapi
 """
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -310,3 +311,130 @@ def test_non_public_visibility_allowed_for_all_consent_states(tmp_path, monkeypa
                 f"{consent=} + {visibility=} should be allowed; "
                 f"got {r.status_code}: {r.text[:200]}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Governance hardening (Step 5) — audit metadata + atomic write
+# ---------------------------------------------------------------------------
+
+import re as _re
+from unittest.mock import patch as _patch
+
+
+def test_post_sets_created_at_automatically(tmp_path, monkeypatch):
+    """POST without created_at must auto-populate it with an ISO UTC timestamp."""
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+
+    response = client.post("/entries", json=_payload())  # no created_at
+    assert response.status_code == 201
+    body = response.json()
+    assert body.get("created_at") is not None
+    # RFC 3339 / ISO 8601 UTC with Z suffix; permissive on fractional digits.
+    assert _re.match(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$",
+        body["created_at"],
+    ), f"created_at not ISO-UTC: {body['created_at']!r}"
+
+
+def test_post_accepts_explicit_created_at(tmp_path, monkeypatch):
+    """Callers can override created_at (e.g. backfills) — auto-set only fires
+    when the field is None."""
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+
+    fixed = "2020-01-01T00:00:00.000000Z"
+    response = client.post("/entries", json=_payload(created_at=fixed))
+    assert response.status_code == 201
+    assert response.json()["created_at"] == fixed
+
+
+def test_post_defaults_entry_schema_version(tmp_path, monkeypatch):
+    """entry_schema_version defaults to the current schema version."""
+    from app.main import CURRENT_ENTRY_SCHEMA_VERSION
+
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+
+    response = client.post("/entries", json=_payload())
+    assert response.status_code == 201
+    assert response.json()["entry_schema_version"] == CURRENT_ENTRY_SCHEMA_VERSION
+
+
+def test_atomic_write_preserves_original_on_replace_failure(tmp_path, monkeypatch):
+    """If os.replace fails (simulating crash between fsync and rename),
+    the original entries.json is untouched. A stale .tmp may remain.
+
+    This is the core crash-safety contract of _write_entries: there is no
+    window in which the live file is half-written.
+    """
+    from app.main import _write_entries
+
+    f = tmp_path / "entries.json"
+    original_payload = [{"id": "original", "marker": "do-not-touch"}]
+    f.write_text(json.dumps(original_payload), encoding="utf-8")
+    monkeypatch.setattr("app.main._ENTRIES_FILE", f)
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+
+    new_payload = [{"id": "new", "marker": "should-not-land"}]
+
+    with _patch("app.main.os.replace", side_effect=OSError("simulated crash")):
+        with pytest.raises(OSError):
+            _write_entries(new_payload)
+
+    # Original file content must be byte-identical to what we wrote first.
+    assert json.loads(f.read_text(encoding="utf-8")) == original_payload, (
+        "Original file was modified during failed write — atomic-write contract broken."
+    )
+
+    # A stale temp may remain (acceptable; next successful write overwrites).
+    tmp = f.with_name(f.name + ".tmp")
+    if tmp.exists():
+        # It exists and contains the new payload that never landed — that's fine.
+        assert json.loads(tmp.read_text(encoding="utf-8")) == new_payload
+
+
+def test_atomic_write_succeeds_when_replace_works(tmp_path, monkeypatch):
+    """Happy-path counterpart: when replace succeeds, the live file is
+    updated and no .tmp is left behind."""
+    from app.main import _write_entries
+
+    f = tmp_path / "entries.json"
+    f.write_text(json.dumps([{"id": "v0"}]), encoding="utf-8")
+    monkeypatch.setattr("app.main._ENTRIES_FILE", f)
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+
+    _write_entries([{"id": "v1"}])
+
+    assert json.loads(f.read_text(encoding="utf-8")) == [{"id": "v1"}]
+    tmp = f.with_name(f.name + ".tmp")
+    assert not tmp.exists(), "stale .tmp should have been atomically renamed away"
+
+
+def test_backup_recovery_restores_previous_state(tmp_path):
+    """Demonstrates the rollback procedure at the file-system level:
+    rename a `.bak` file back over `entries.json` and the previous state
+    is restored. This is the recovery path used in production rollback.
+
+    The test does not exercise _write_entries — it validates the operator
+    contract that backups produced by the migration scripts (and that any
+    future Step-6 audit-log step might rely on) can be restored with a
+    single atomic rename.
+    """
+    live = tmp_path / "entries.json"
+    bak = tmp_path / "entries.json.pre-v4.bak"
+
+    pre_state = [{"id": "pre", "consent_status": "pending"}]
+    post_state = [{"id": "post", "consent_status": "confirmed"}]
+
+    bak.write_text(json.dumps(pre_state), encoding="utf-8")
+    live.write_text(json.dumps(post_state), encoding="utf-8")
+
+    # Rollback procedure: atomic rename of backup over live.
+    os.replace(bak, live)
+
+    assert json.loads(live.read_text(encoding="utf-8")) == pre_state
+    assert not bak.exists()
