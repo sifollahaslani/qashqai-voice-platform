@@ -183,3 +183,126 @@ def test_get_entries_against_legacy_on_disk_record(tmp_path, monkeypatch):
         f"got {response.status_code} with body {response.text[:200]!r}. "
         f"If this is a 200, extra='forbid' is not propagating to LinguisticEntry."
     )
+
+
+# ---------------------------------------------------------------------------
+# Governance hardening (Step 3) — consent enum unification
+# ---------------------------------------------------------------------------
+
+
+def _payload(**overrides):
+    """Helper: valid payload with optional field overrides."""
+    return {**_VALID_PAYLOAD, **overrides}
+
+
+def test_post_rejects_old_enum_value_public(tmp_path, monkeypatch):
+    """Old enum value `public` is no longer in ConsentStatus → 422.
+
+    Belt-and-braces check that the enum change is enforced at the request
+    boundary (callers using the old vocabulary fail loud, not silently).
+    """
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+    response = client.post("/entries", json=_payload(consent_status="public"))
+    assert response.status_code == 422
+
+
+def test_post_rejects_old_enum_value_archive_only(tmp_path, monkeypatch):
+    """Old enum value `archive_only` is no longer in ConsentStatus → 422."""
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+    response = client.post("/entries", json=_payload(consent_status="archive_only"))
+    assert response.status_code == 422
+
+
+def test_post_accepts_new_enum_value_confirmed(tmp_path, monkeypatch):
+    """New value `confirmed` is accepted."""
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+    response = client.post(
+        "/entries",
+        json=_payload(consent_status="confirmed", visibility_status="public"),
+    )
+    assert response.status_code == 201
+
+
+def test_post_accepts_new_enum_value_withdrawn(tmp_path, monkeypatch):
+    """New value `withdrawn` is accepted at create time (visibility must be non-public)."""
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+    response = client.post(
+        "/entries",
+        json=_payload(consent_status="withdrawn", visibility_status="blocked"),
+    )
+    assert response.status_code == 201
+
+
+def test_visibility_public_requires_confirmed_consent(tmp_path, monkeypatch):
+    """The unified rule: public visibility requires confirmed consent.
+
+    Covers all four new consent states. Encodes the Step 3 tightening
+    explicitly so any future relaxation has to delete a test, not slip
+    through unnoticed.
+    """
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+
+    # confirmed + public  -> allowed
+    r = client.post(
+        "/entries",
+        json=_payload(consent_status="confirmed", visibility_status="public"),
+    )
+    assert r.status_code == 201, r.text
+
+    # pending + public    -> rejected
+    r = client.post(
+        "/entries",
+        json=_payload(consent_status="pending", visibility_status="public"),
+    )
+    assert r.status_code == 422
+
+    # restricted + public -> rejected  (this is the Step 3 tightening)
+    r = client.post(
+        "/entries",
+        json=_payload(consent_status="restricted", visibility_status="public"),
+    )
+    assert r.status_code == 422
+
+    # withdrawn + public  -> rejected
+    r = client.post(
+        "/entries",
+        json=_payload(consent_status="withdrawn", visibility_status="public"),
+    )
+    assert r.status_code == 422
+
+
+def test_non_public_visibility_allowed_for_all_consent_states(tmp_path, monkeypatch):
+    """Internal/blocked visibility is allowed regardless of consent state.
+
+    Sanity check that the validator is scoped to public visibility only — we
+    are not accidentally blocking internal/blocked storage of pending or
+    withdrawn records.
+    """
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+
+    for consent in ("confirmed", "pending", "restricted", "withdrawn"):
+        for visibility in ("internal", "blocked"):
+            r = client.post(
+                "/entries",
+                json=_payload(
+                    consent_status=consent,
+                    community_consent_status=consent,
+                    visibility_status=visibility,
+                ),
+            )
+            assert r.status_code == 201, (
+                f"{consent=} + {visibility=} should be allowed; "
+                f"got {r.status_code}: {r.text[:200]}"
+            )

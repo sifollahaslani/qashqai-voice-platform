@@ -36,7 +36,16 @@ class DetectResult(BaseModel):
 # ---------- Linguistic entry models ----------
 
 ContentType = Literal["word", "sentence", "story", "song", "proverb", "oral_history"]
-ConsentStatus = Literal["public", "restricted", "archive_only", "pending"]
+
+# Consent vocabulary — consent-centric, not publication-centric.
+# Aligned with 06_Data_Governance/Withdrawal_Protocol_v1.md.
+#   confirmed  — consent obtained and currently valid
+#   pending    — consent not yet obtained
+#   withdrawn  — consent was given and has been revoked
+#   restricted — consent given with conditions on use
+# Publication/visibility is expressed separately via VisibilityStatus.
+ConsentStatus = Literal["confirmed", "pending", "withdrawn", "restricted"]
+
 VisibilityStatus = Literal["public", "internal", "blocked"]
 
 
@@ -74,11 +83,24 @@ class LinguisticEntryCreate(BaseModel):
     @field_validator("visibility_status")
     @classmethod
     def check_consent_visibility(cls, v: str, info) -> str:
+        """Public visibility requires confirmed consent.
+
+        Rule: `visibility_status == "public"` is permitted only when
+        `consent_status == "confirmed"`. Any other consent state
+        (`pending`, `restricted`, `withdrawn`) blocks public visibility.
+
+        Note (semantic change from pre-Step-3 code): the previous validator
+        allowed public visibility with `restricted` consent. The new rule
+        tightens that — restricted-use consent does not authorise public
+        publication. Old `archive_only` and `pending` rules are preserved
+        (mapped to `restricted` and `pending` respectively).
+        """
         consent = info.data.get("consent_status")
-        if consent == "pending" and v == "public":
-            raise ValueError("Visibility cannot be public when consent is pending")
-        if consent == "archive_only" and v == "public":
-            raise ValueError("Visibility cannot be public when consent is archive_only")
+        if v == "public" and consent != "confirmed":
+            raise ValueError(
+                f"Visibility cannot be public when consent_status is {consent!r}; "
+                f"only 'confirmed' allows public visibility."
+            )
         return v
 
 
