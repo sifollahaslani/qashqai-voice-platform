@@ -7,7 +7,7 @@ from typing import Literal, List, Optional
 import anthropic
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 # ---------- Data models ----------
@@ -41,6 +41,12 @@ VisibilityStatus = Literal["public", "internal", "blocked"]
 
 
 class LinguisticEntryCreate(BaseModel):
+    # Governance hardening (Step 1): reject unknown fields at the request boundary
+    # rather than silently dropping them. Inherited by LinguisticEntry, so the same
+    # rule applies to response serialisation. Surfaces the data/entries.json schema
+    # drift (legacy `ai_usage_permission` field) instead of hiding it.
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     content_type: ContentType
     language: str

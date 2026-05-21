@@ -112,3 +112,74 @@ def test_post_entries_success(tmp_path, monkeypatch):
     stored = json.loads(f.read_text(encoding="utf-8"))
     assert len(stored) == 1
     assert stored[0]["id"] == body["id"]
+
+
+# ---------------------------------------------------------------------------
+# Governance hardening (Step 1) — explicit forbid on unknown fields
+# ---------------------------------------------------------------------------
+
+
+def test_post_entries_rejects_unknown_field(tmp_path, monkeypatch):
+    """POST with a field not in the schema must return 422, not silently drop it.
+
+    Without `extra='forbid'`, Pydantic v2 would drop unknown fields and persist
+    only the known ones — a silent governance bypass for any caller passing
+    misnamed or future fields.
+    """
+    f = tmp_path / "entries.json"
+    monkeypatch.setattr("app.main._ENTRIES_FILE", f)
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+
+    payload = {**_VALID_PAYLOAD, "ai_usage_permission": "review_required"}
+
+    client = TestClient(app)
+    response = client.post("/entries", json=payload)
+
+    assert response.status_code == 422
+    # Nothing should have been written when validation rejects the payload.
+    assert not f.exists() or json.loads(f.read_text(encoding="utf-8")) == []
+
+
+def test_get_entries_against_legacy_on_disk_record(tmp_path, monkeypatch):
+    """Document current behaviour when on-disk data contains a legacy field
+    (`ai_usage_permission`) that is no longer in the model.
+
+    This test exists to surface — not paper over — the schema drift in the
+    real data/entries.json. After Step 1 (extra='forbid' on LinguisticEntry
+    via inheritance), response_model validation should reject the record.
+    The expected outcome is a 500: the API refuses to serve data it cannot
+    validate, rather than silently dropping the unknown field.
+
+    If this test fails (e.g. returns 200 with the field stripped), Step 1 is
+    incomplete and the drift is still silent. Step 2 (migration) is what
+    actually resolves the drift; this test only ensures we cannot ignore it.
+    """
+    f = tmp_path / "entries.json"
+    legacy_record = {
+        "id": "6d20a4c2-961a-4554-b2a1-c4d9ae901902",
+        "title": "at",
+        "content_type": "word",
+        "language": "qashqai",
+        "dialect": "dareshuri",
+        "speaker_id": "SPK-001",
+        "speaker_display_name": None,
+        "recording_date": None,
+        "collector_name": None,
+        "consent_status": "pending",
+        "ai_usage_permission": "review_required",  # legacy field, not in current model
+        "visibility_status": "internal",
+        "notes": None,
+    }
+    f.write_text(json.dumps([legacy_record]), encoding="utf-8")
+    monkeypatch.setattr("app.main._ENTRIES_FILE", f)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/entries")
+
+    # We assert the failure-mode contract: response_model validation must
+    # refuse to serve unknown-field records, not silently strip them.
+    assert response.status_code == 500, (
+        f"Expected 500 (response_model validation refuses legacy record), "
+        f"got {response.status_code} with body {response.text[:200]!r}. "
+        f"If this is a 200, extra='forbid' is not propagating to LinguisticEntry."
+    )
