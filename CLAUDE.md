@@ -221,6 +221,10 @@ Hooks in `hooks/` enforce data governance automatically (wired via `.claude/sett
 5. The community's cultural integrity is the purpose of this project, not a constraint on it.
 6. **All content — platform responses, outreach posts, classroom material, dataset annotations — must be strictly cultural and educational. Never political.**
 
+### Operational assumptions
+
+The governance store (`data/entries.json`), the audit log (`data/audit_log.jsonl`), and the migration scripts have documented ceilings, single-worker assumptions, and emergency-recovery procedures. See `OPS_PLAYBOOK.md` → **Governance & Storage Operations** for the full inventory of guaranteed behaviors, operator-expected behaviors, and unsupported scenarios as of `governance-hardening` commit `2546377`.
+
 ---
 
 ## Project milestones (as of 2026-04-07)
