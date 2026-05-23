@@ -1,0 +1,55 @@
+# CODEOWNERS — QashqAI Voice Platform
+#
+# Every file requires review from the repository owner by default.
+# Specific paths below add explicit review expectations for governance,
+# cultural content, and security-critical areas.
+#
+# Format: <path pattern>  <@owner> [<@additional-reviewer>]
+# Patterns are matched top-to-bottom; the last matching rule wins.
+# Reference: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ── Default: all files ────────────────────────────────────────────────────────
+*                                   @sifollahaslani
+
+# ── Data governance documents ─────────────────────────────────────────────────
+# Any change to consent, withdrawal, or governance policy requires
+# repository owner review. These documents define legally and ethically
+# binding obligations to Qashqai community members.
+/06_Data_Governance/                @sifollahaslani
+/01_Core_Documents/Consent_Ethics.md  @sifollahaslani
+
+# ── Cultural and linguistic content ───────────────────────────────────────────
+# Changes to Qashqai vocabulary, phrase cards, system prompts, or
+# the classroom page require cultural validation before merge.
+# The repository owner is the designated cultural validator for this project.
+/app/app/classroom/                 @sifollahaslani
+/app/app/dictionary/                @sifollahaslani
+/app/app/contribute/                @sifollahaslani
+
+# ── Data pipeline and speaker data ────────────────────────────────────────────
+# The intake → review → process pipeline and all speaker metadata
+# are consent-critical. No changes without owner sign-off.
+/hooks/                             @sifollahaslani
+/metadata/                          @sifollahaslani
+/data/                              @sifollahaslani
+
+# ── AI and backend core ───────────────────────────────────────────────────────
+# Changes to the agent pipeline, system prompts, model selection,
+# or API configuration affect cultural safety and cost.
+/app/main.py                        @sifollahaslani
+/main.py                            @sifollahaslani
+
+# ── Claude Code agent definitions ─────────────────────────────────────────────
+# Agent definitions control autonomous behaviour across the data pipeline.
+# Modifications require explicit owner review.
+/.claude/agents/                    @sifollahaslani
+/.claude/settings.json              @sifollahaslani
+
+# ── Security and deployment ───────────────────────────────────────────────────
+SECURITY.md                         @sifollahaslani
+render.yaml                         @sifollahaslani
+Procfile                            @sifollahaslani
+requirements.txt                    @sifollahaslani
+
+# ── Governance bootstrap (this directory) ─────────────────────────────────────
+/.github/                           @sifollahaslani
