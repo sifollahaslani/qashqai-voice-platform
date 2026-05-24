@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.main import app, _read_entries, _ENTRIES_FILE
 
@@ -217,8 +218,21 @@ def test_get_entries_against_legacy_on_disk_record(tmp_path, monkeypatch):
 
 
 def _payload(**overrides):
-    """Helper: valid payload with optional field overrides."""
-    return {**_VALID_PAYLOAD, **overrides}
+    """Helper: valid payload with optional field overrides.
+
+    Slice C: when the caller overrides only one of consent_status /
+    community_consent_status, we auto-sync the other to match. Without
+    this, every legacy test that only passed consent_status would trip
+    the new community-mismatch override-accountability validator. Tests
+    that specifically want to exercise the mismatch case override both
+    fields explicitly.
+    """
+    p = {**_VALID_PAYLOAD, **overrides}
+    if "consent_status" in overrides and "community_consent_status" not in overrides:
+        p["community_consent_status"] = overrides["consent_status"]
+    elif "community_consent_status" in overrides and "consent_status" not in overrides:
+        p["consent_status"] = overrides["community_consent_status"]
+    return p
 
 
 def test_post_rejects_old_enum_value_public(tmp_path, monkeypatch):
@@ -256,15 +270,26 @@ def test_post_accepts_new_enum_value_confirmed(tmp_path, monkeypatch):
 
 
 def test_post_accepts_new_enum_value_withdrawn(tmp_path, monkeypatch):
-    """New value `withdrawn` is accepted at create time (visibility must be non-public)."""
+    """New value `withdrawn` is accepted at create time when accompanied by
+    the Slice C governance-accountability fields: irreversibility ack,
+    blocked visibility, all ai_* False, override actor + reason, and an
+    explicit downstream_invalidation_refs (empty list is acceptable)."""
     monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
     monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
     client = TestClient(app)
     response = client.post(
         "/entries",
-        json=_payload(consent_status="withdrawn", visibility_status="blocked"),
+        json=_payload(
+            consent_status="withdrawn",
+            community_consent_status="withdrawn",
+            visibility_status="blocked",
+            irreversible_acknowledged=True,
+            consent_override_actor="director",
+            consent_override_reason="speaker requested withdrawal in writing",
+            downstream_invalidation_refs=[],
+        ),
     )
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
 
 
 def test_visibility_public_requires_confirmed_consent(tmp_path, monkeypatch):
@@ -299,39 +324,90 @@ def test_visibility_public_requires_confirmed_consent(tmp_path, monkeypatch):
     )
     assert r.status_code == 422
 
-    # withdrawn + public  -> rejected
+    # withdrawn + public  -> rejected (Slice C: withdrawal forces visibility=blocked)
     r = client.post(
         "/entries",
-        json=_payload(consent_status="withdrawn", visibility_status="public"),
+        json=_payload(
+            consent_status="withdrawn",
+            community_consent_status="withdrawn",
+            visibility_status="public",
+            irreversible_acknowledged=True,
+            consent_override_actor="director",
+            consent_override_reason="speaker withdrawal",
+            downstream_invalidation_refs=[],
+        ),
     )
     assert r.status_code == 422
 
 
 def test_non_public_visibility_allowed_for_all_consent_states(tmp_path, monkeypatch):
-    """Internal/blocked visibility is allowed regardless of consent state.
+    """Internal/blocked visibility is allowed for non-withdrawn consent states.
 
-    Sanity check that the validator is scoped to public visibility only — we
-    are not accidentally blocking internal/blocked storage of pending or
-    withdrawn records.
+    Slice C tightening: `withdrawn` now requires `blocked` specifically —
+    internal is not enough for a revoked entry. The matrix below excludes
+    the (withdrawn, internal) combination and adds the revocation
+    accountability fields on the (withdrawn, blocked) combination.
     """
     monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
     monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
     client = TestClient(app)
 
-    for consent in ("confirmed", "pending", "restricted", "withdrawn"):
-        for visibility in ("internal", "blocked"):
-            r = client.post(
-                "/entries",
-                json=_payload(
-                    consent_status=consent,
-                    community_consent_status=consent,
-                    visibility_status=visibility,
-                ),
-            )
-            assert r.status_code == 201, (
-                f"{consent=} + {visibility=} should be allowed; "
-                f"got {r.status_code}: {r.text[:200]}"
-            )
+    cases = [
+        ("confirmed", "internal", {}),
+        ("confirmed", "blocked", {}),
+        ("pending", "internal", {}),
+        ("pending", "blocked", {}),
+        ("restricted", "internal", {}),
+        ("restricted", "blocked", {}),
+        # withdrawn + blocked carries the Slice C accountability payload.
+        (
+            "withdrawn",
+            "blocked",
+            {
+                "irreversible_acknowledged": True,
+                "consent_override_actor": "director",
+                "consent_override_reason": "withdrawal recorded",
+                "downstream_invalidation_refs": [],
+            },
+        ),
+    ]
+
+    for consent, visibility, extra in cases:
+        r = client.post(
+            "/entries",
+            json=_payload(
+                consent_status=consent,
+                community_consent_status=consent,
+                visibility_status=visibility,
+                **extra,
+            ),
+        )
+        assert r.status_code == 201, (
+            f"{consent=} + {visibility=} should be allowed; "
+            f"got {r.status_code}: {r.text[:200]}"
+        )
+
+
+def test_withdrawn_with_internal_visibility_rejected(tmp_path, monkeypatch):
+    """Withdrawal must force visibility=blocked. Internal is no longer
+    sufficient — the entry must not remain visible after revocation."""
+    monkeypatch.setattr("app.main._ENTRIES_FILE", tmp_path / "entries.json")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_payload(
+            consent_status="withdrawn",
+            community_consent_status="withdrawn",
+            visibility_status="internal",
+            irreversible_acknowledged=True,
+            consent_override_actor="director",
+            consent_override_reason="speaker withdrawal",
+            downstream_invalidation_refs=[],
+        ),
+    )
+    assert r.status_code == 422
+    assert "visibility_status='blocked'" in r.text or "blocked" in r.text.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -773,9 +849,10 @@ def test_auth_deny_produces_audit_event(tmp_path, monkeypatch):
     deny = next(l for l in lines if l["op"] == "auth_denied")
     assert deny["reason"] == "missing_or_invalid_token"
     assert deny["request_origin"]  # non-empty
-    # Stage A bumped AUDIT_SCHEMA_VERSION from 2 → 3. The Step-7 auth_denied
-    # op is unchanged in shape; only the version tag advanced.
-    assert deny["audit_schema_version"] == 3
+    # Slice C bumped AUDIT_SCHEMA_VERSION 3 → 4 (consent_revoked op + strict
+    # AuditEvent + consent/visibility on create_entry). The auth_denied op
+    # shape is unchanged; only the version tag advanced.
+    assert deny["audit_schema_version"] == 4
 
 
 def test_auth_deny_for_remote_origin_audited(tmp_path, monkeypatch):
@@ -846,3 +923,322 @@ def test_constant_time_compare_used_for_token(tmp_path, monkeypatch):
 
     assert calls, "hmac.compare_digest was not invoked — token compare may be using =="
     assert calls[0] == (b"abc", b"abc")
+
+
+# ---------------------------------------------------------------------------
+# Governance hardening (Slice C) — override accountability + irreversibility
+# ---------------------------------------------------------------------------
+
+
+def _withdrawn_payload(**overrides):
+    """A fully governance-compliant withdrawn-entry payload. Tests can drop
+    individual fields via overrides to exercise each invariant.
+
+    Overrides are merged AFTER the defaults so they replace cleanly — using
+    `_payload(**defaults, **overrides)` would raise on key collision because
+    Python evaluates duplicate kwargs as an error before the function runs.
+    """
+    defaults = {
+        "consent_status": "withdrawn",
+        "community_consent_status": "withdrawn",
+        "visibility_status": "blocked",
+        "irreversible_acknowledged": True,
+        "consent_override_actor": "director",
+        "consent_override_reason": "speaker withdrawal recorded in writing",
+        "downstream_invalidation_refs": [],
+    }
+    defaults.update(overrides)
+    return _payload(**defaults)
+
+
+def test_withdrawn_without_acknowledgment_rejected(tmp_path, monkeypatch):
+    """Withdrawal is irreversible. The caller must set
+    irreversible_acknowledged=True to confirm. Default False -> 422."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(irreversible_acknowledged=False),
+    )
+    assert r.status_code == 422
+    assert "irreversible" in r.text.lower()
+
+
+def test_withdrawn_with_ai_training_allowed_rejected(tmp_path, monkeypatch):
+    """A withdrawn entry must have all ai_*_allowed flags False. Any True ->
+    422 — this is the downstream-permission half of the invariant."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(ai_training_allowed=True),
+    )
+    assert r.status_code == 422
+    assert "ai_" in r.text.lower() or "ai_training_allowed" in r.text
+
+
+def test_withdrawn_with_ai_inference_allowed_rejected(tmp_path, monkeypatch):
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(ai_inference_allowed=True),
+    )
+    assert r.status_code == 422
+
+
+def test_withdrawn_with_ai_generation_allowed_rejected(tmp_path, monkeypatch):
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(ai_generation_allowed=True),
+    )
+    assert r.status_code == 422
+
+
+def test_withdrawn_without_override_actor_rejected(tmp_path, monkeypatch):
+    """Revocation requires non-empty override actor — accountability gate."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(consent_override_actor=""),
+    )
+    assert r.status_code == 422
+    assert "actor" in r.text.lower()
+
+
+def test_withdrawn_without_override_reason_rejected(tmp_path, monkeypatch):
+    """Revocation requires non-empty override reason — accountability gate."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(consent_override_reason="   "),
+    )
+    assert r.status_code == 422
+    assert "reason" in r.text.lower()
+
+
+def test_withdrawn_without_downstream_refs_field_rejected(tmp_path, monkeypatch):
+    """A revocation must explicitly assert what downstream artifacts to
+    invalidate. Omitting the field (so it defaults to []) is NOT accepted
+    — the caller must affirm the empty list."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    payload = _withdrawn_payload()
+    payload.pop("downstream_invalidation_refs", None)
+    r = client.post("/entries", json=payload)
+    assert r.status_code == 422
+    assert "downstream_invalidation_refs" in r.text
+
+
+def test_withdrawn_with_explicit_empty_downstream_refs_accepted(tmp_path, monkeypatch):
+    """An explicit [] downstream list IS acceptable — it asserts that the
+    operator has confirmed no downstream artifacts exist for this entry."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(downstream_invalidation_refs=[]),
+    )
+    assert r.status_code == 201, r.text
+
+
+def test_withdrawn_with_listed_downstream_refs_accepted(tmp_path, monkeypatch):
+    """A populated downstream list is the normal-case payload — refs are
+    surfaced into the consent_revoked audit line."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    refs = ["dataset/pack-2026-01.zip", "training-run/run-42"]
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(downstream_invalidation_refs=refs),
+    )
+    assert r.status_code == 201, r.text
+
+    lines = _read_audit_lines(tmp_path)
+    revoke = next(l for l in lines if l["op"] == "consent_revoked")
+    assert revoke["downstream_invalidation_refs"] == refs
+
+
+def test_consent_mismatch_without_actor_rejected(tmp_path, monkeypatch):
+    """community_consent_status != consent_status is an override and
+    requires override_actor + override_reason even when consent isn't
+    being withdrawn."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_payload(
+            consent_status="confirmed",
+            community_consent_status="pending",
+            visibility_status="internal",
+            # no override_actor / reason -> 422
+        ),
+    )
+    assert r.status_code == 422
+    assert "override" in r.text.lower()
+
+
+def test_consent_mismatch_with_actor_and_reason_accepted(tmp_path, monkeypatch):
+    """A consent mismatch backed by override accountability passes."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_payload(
+            consent_status="confirmed",
+            community_consent_status="pending",
+            visibility_status="internal",
+            consent_override_actor="director",
+            consent_override_reason="elder council pending community vote",
+        ),
+    )
+    assert r.status_code == 201, r.text
+
+
+# ---------------------------------------------------------------------------
+# Audit trail — consent_revoked op + governance fields on create_entry
+# ---------------------------------------------------------------------------
+
+
+def test_create_entry_audit_line_records_consent_and_visibility(tmp_path, monkeypatch):
+    """Slice C: every create_entry audit line carries the entry's
+    consent_status and visibility_status — the governance posture at the
+    moment the entry was persisted."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_payload(consent_status="pending", visibility_status="internal"),
+    )
+    assert r.status_code == 201
+
+    lines = _read_audit_lines(tmp_path)
+    create_line = next(l for l in lines if l["op"] == "create_entry")
+    assert create_line["consent_status"] == "pending"
+    assert create_line["visibility_status"] == "internal"
+
+
+def test_withdrawal_emits_consent_revoked_audit_line(tmp_path, monkeypatch):
+    """A POST that creates a withdrawn entry MUST emit two audit lines:
+    one create_entry + one consent_revoked. Both tied to the same
+    entry_id; the revocation line carries the accountability fields."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    r = client.post(
+        "/entries",
+        json=_withdrawn_payload(
+            consent_override_actor="director",
+            consent_override_reason="speaker written withdrawal 2026-05-20",
+            downstream_invalidation_refs=["dataset/q1-2026.zip"],
+        ),
+    )
+    assert r.status_code == 201, r.text
+    entry_id = r.json()["id"]
+
+    lines = _read_audit_lines(tmp_path)
+    ops = [l["op"] for l in lines]
+    assert ops == ["create_entry", "consent_revoked"], ops
+
+    create_line, revoke_line = lines
+    assert create_line["entry_id"] == entry_id
+    assert revoke_line["entry_id"] == entry_id
+    assert revoke_line["consent_status"] == "withdrawn"
+    assert revoke_line["visibility_status"] == "blocked"
+    assert revoke_line["revocation_actor"] == "director"
+    assert revoke_line["revocation_reason"] == (
+        "speaker written withdrawal 2026-05-20"
+    )
+    assert revoke_line["downstream_invalidation_refs"] == ["dataset/q1-2026.zip"]
+    assert revoke_line["audit_schema_version"] == 4
+
+
+def test_non_withdrawal_does_not_emit_consent_revoked(tmp_path, monkeypatch):
+    """A pending/confirmed/restricted entry must NOT produce a
+    consent_revoked line — that op is reserved for actual withdrawals."""
+    _setup_storage(tmp_path, monkeypatch)
+    client = TestClient(app)
+    client.post("/entries", json=_payload(consent_status="pending"))
+
+    lines = _read_audit_lines(tmp_path)
+    assert all(l["op"] != "consent_revoked" for l in lines), lines
+
+
+# ---------------------------------------------------------------------------
+# AuditEvent strict schema — malformed metadata cannot land on disk
+# ---------------------------------------------------------------------------
+
+
+def test_audit_event_rejects_unknown_field(tmp_path, monkeypatch):
+    """The AuditEvent model has extra='forbid'. A typo'd or unknown field
+    in an event raises ValidationError BEFORE the line is written —
+    closing the silent-bypass surface where the audit log would otherwise
+    accept any dict."""
+    from app.main import _append_audit, AUDIT_SCHEMA_VERSION
+
+    monkeypatch.setattr("app.main._AUDIT_LOG_FILE", tmp_path / "audit_log.jsonl")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+
+    bad_event = {
+        "audit_schema_version": AUDIT_SCHEMA_VERSION,
+        "ts": "2026-05-24T00:00:00.000000Z",
+        "op": "create_entry",
+        "entry_id": "abc",
+        "typo_field": "value-that-should-never-land",  # not in schema
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        _append_audit(bad_event)
+    assert "typo_field" in str(exc_info.value) or "extra" in str(exc_info.value).lower()
+    # File should not exist (or be empty) — the write was aborted before any
+    # filesystem touch.
+    audit_file = tmp_path / "audit_log.jsonl"
+    if audit_file.exists():
+        assert audit_file.read_text(encoding="utf-8") == ""
+
+
+def test_audit_event_rejects_unknown_op(tmp_path, monkeypatch):
+    """The op field is a Literal enum. Unknown ops are rejected."""
+    from app.main import _append_audit, AUDIT_SCHEMA_VERSION
+
+    monkeypatch.setattr("app.main._AUDIT_LOG_FILE", tmp_path / "audit_log.jsonl")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+
+    bad_event = {
+        "audit_schema_version": AUDIT_SCHEMA_VERSION,
+        "ts": "2026-05-24T00:00:00.000000Z",
+        "op": "fabricated_op",  # not in AuditOp
+    }
+    with pytest.raises(ValidationError):
+        _append_audit(bad_event)
+
+
+def test_audit_event_validation_error_is_loud_in_deny_path(tmp_path, monkeypatch, capsys):
+    """If a malformed event reaches _audit_safe (e.g. future bug in the
+    deny path constructs a bad event), the validation failure must NOT
+    change the security decision — it surfaces to stderr like an OSError
+    would, and the deny still happens."""
+    from app.main import _audit_safe
+
+    monkeypatch.setattr("app.main._AUDIT_LOG_FILE", tmp_path / "audit_log.jsonl")
+    monkeypatch.setattr("app.main._DATA_DIR", tmp_path)
+
+    bad_event = {
+        "audit_schema_version": 4,
+        "ts": "2026-05-24T00:00:00.000000Z",
+        "op": "auth_denied",
+        "bogus": "field",
+    }
+    # _audit_safe must NOT raise — it logs and returns.
+    _audit_safe(bad_event)
+    captured = capsys.readouterr()
+    assert "audit-warn" in captured.err
+    assert "auth_denied" in captured.err
+
+
+def test_constant_is_v4(tmp_path):
+    """AUDIT_SCHEMA_VERSION = 4 after Slice C."""
+    from app.main import AUDIT_SCHEMA_VERSION
+    assert AUDIT_SCHEMA_VERSION == 4

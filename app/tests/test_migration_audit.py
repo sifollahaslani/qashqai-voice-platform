@@ -159,10 +159,11 @@ def test_migration_writes_one_audit_line_with_correct_shape(version, tmp_path, m
         f"v{version} produced {len(lines)} audit lines, expected 1"
     )
 
+    from app.main import AUDIT_SCHEMA_VERSION
     line = lines[0]
-    assert line["audit_schema_version"] == 3, (
+    assert line["audit_schema_version"] == AUDIT_SCHEMA_VERSION, (
         f"v{version} wrote audit_schema_version={line['audit_schema_version']!r}; "
-        "Stage A bumps to 3"
+        f"current AUDIT_SCHEMA_VERSION={AUDIT_SCHEMA_VERSION}"
     )
     assert line["op"] == "migration_prepared"
     assert line["migration_version"] == version
@@ -265,9 +266,13 @@ def test_migration_audit_is_append_only(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_audit_schema_version_constant_is_3(tmp_path):
-    """The schema bump is the contract Stage A delivers; assert it explicitly."""
+def test_audit_schema_version_constant_is_4(tmp_path):
+    """The schema bump is the contract Slice C delivers; assert it explicitly.
+
+    History: Stage A landed at v3 (added migration_prepared op). Slice C
+    bumps to v4 (consent_revoked op + strict AuditEvent schema +
+    consent_status / visibility_status fields on create_entry)."""
     from app.main import AUDIT_SCHEMA_VERSION
-    assert AUDIT_SCHEMA_VERSION == 3, (
-        f"AUDIT_SCHEMA_VERSION is {AUDIT_SCHEMA_VERSION}; Stage A requires 3."
+    assert AUDIT_SCHEMA_VERSION == 4, (
+        f"AUDIT_SCHEMA_VERSION is {AUDIT_SCHEMA_VERSION}; Slice C requires 4."
     )

@@ -11,7 +11,7 @@ from typing import Literal, List, Optional
 import anthropic
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 
 # ---------- Data models ----------
@@ -112,6 +112,38 @@ class LinguisticEntryCreate(BaseModel):
     created_at: Optional[str] = None
     entry_schema_version: int = CURRENT_ENTRY_SCHEMA_VERSION
 
+    # Governance hardening (Slice C) — override accountability + irreversibility.
+    #
+    # These fields close three governance gaps left after Slice 1:
+    #
+    #   1. Withdrawal is irreversible per Withdrawal_Protocol_v1.md but the
+    #      schema accepted `consent_status="withdrawn"` without any
+    #      acknowledgment that the caller understood that. The
+    #      `irreversible_acknowledged` flag forces the caller to confirm.
+    #
+    #   2. A consent override — either `consent_status="withdrawn"` or any
+    #      mismatch between speaker and community consent — used to land
+    #      with no record of WHO made the call or WHY. The
+    #      `consent_override_actor` and `consent_override_reason` fields
+    #      force accountability at the request boundary.
+    #
+    #   3. A withdrawal landing on an entry whose data may have already
+    #      flowed downstream (dataset packaging, training runs) silently
+    #      lost the link between the revocation and the artifacts that
+    #      needed to be invalidated. `downstream_invalidation_refs` records
+    #      what was (or, when explicitly empty `[]`, was not) downstream of
+    #      the revoked entry. Operators reading the audit log can fan out
+    #      the invalidation from this list.
+    #
+    # All four default to safe / empty values so the model remains
+    # backward-compatible with legacy on-disk records (consent_status
+    # "pending" or "confirmed" — the gating happens in the model_validator
+    # below and only triggers on overrides or revocations).
+    irreversible_acknowledged: bool = False
+    consent_override_actor: Optional[str] = None
+    consent_override_reason: Optional[str] = None
+    downstream_invalidation_refs: List[str] = []
+
     @field_validator("title", "language", "speaker_id")
     @classmethod
     def must_not_be_blank(cls, v: str) -> str:
@@ -152,9 +184,159 @@ class LinguisticEntryCreate(BaseModel):
             )
         return v
 
+    @model_validator(mode="after")
+    def enforce_governance_invariants(self) -> "LinguisticEntryCreate":
+        """Tighten the governance invariants that the per-field validators
+        cannot express in isolation.
+
+        Three invariants:
+
+        (A) Withdrawal is irreversible AND has safety consequences. A record
+            with `consent_status == "withdrawn"` MUST:
+              - have `irreversible_acknowledged = True` (caller confirms they
+                understand this is a one-way door),
+              - have `visibility_status = "blocked"` (the entry is not served),
+              - have ALL `ai_*_allowed` flags set to False.
+
+            These three conditions together prevent a "withdrawn but still
+            visible / still AI-eligible" record from existing in the store
+            in the first place. The validator catches the mismatch at the
+            request boundary; legacy on-disk records in the inconsistent
+            state will fail GET /entries validation (loud, not silent).
+
+        (B) Any consent OVERRIDE requires accountability — the entry must
+            carry a non-empty `consent_override_actor` and
+            `consent_override_reason`. An override means one of:
+              - `consent_status == "withdrawn"` (a revocation), OR
+              - `community_consent_status != consent_status` (the community
+                and the speaker disagree, and the entry encodes that
+                disagreement in its stored consent posture).
+
+        (C) Downstream invalidation references are MANDATORY (as an
+            explicit list, possibly empty) on any revocation. The list may
+            be `[]` to mean "no downstream artifacts to invalidate", but
+            the caller must affirm that. A revocation cannot land without
+            either a list of refs OR an explicit empty list.
+        """
+        is_revocation = self.consent_status == "withdrawn"
+
+        if is_revocation:
+            if not self.irreversible_acknowledged:
+                raise ValueError(
+                    "consent_status='withdrawn' is an irreversible transition. "
+                    "Set irreversible_acknowledged=True to confirm the caller "
+                    "understands this state is one-way per "
+                    "06_Data_Governance/Withdrawal_Protocol_v1.md."
+                )
+            if self.visibility_status != "blocked":
+                raise ValueError(
+                    "consent_status='withdrawn' requires visibility_status='blocked'; "
+                    f"got {self.visibility_status!r}. A withdrawn entry must not "
+                    "remain visible."
+                )
+            if (
+                self.ai_training_allowed
+                or self.ai_inference_allowed
+                or self.ai_generation_allowed
+            ):
+                raise ValueError(
+                    "consent_status='withdrawn' requires all ai_*_allowed flags "
+                    "to be False; got "
+                    f"ai_training_allowed={self.ai_training_allowed}, "
+                    f"ai_inference_allowed={self.ai_inference_allowed}, "
+                    f"ai_generation_allowed={self.ai_generation_allowed}."
+                )
+
+        is_community_mismatch = self.community_consent_status != self.consent_status
+        is_override = is_revocation or is_community_mismatch
+
+        if is_override:
+            actor = (self.consent_override_actor or "").strip()
+            reason = (self.consent_override_reason or "").strip()
+            if not actor:
+                raise ValueError(
+                    "Consent override or revocation requires a non-empty "
+                    "consent_override_actor identifying who made the decision."
+                )
+            if not reason:
+                raise ValueError(
+                    "Consent override or revocation requires a non-empty "
+                    "consent_override_reason explaining why."
+                )
+
+        # Downstream invalidation refs: required on revocation. The field
+        # defaults to [] so omitting it on non-revocations is fine; on a
+        # revocation the field must be present in the payload (an explicit
+        # [] is acceptable — it asserts "no downstream artifacts exist").
+        # We check the model_fields_set to distinguish "explicit empty list"
+        # from "field was never supplied".
+        if is_revocation and "downstream_invalidation_refs" not in self.model_fields_set:
+            raise ValueError(
+                "Revocation requires an explicit downstream_invalidation_refs "
+                "field (use [] to assert no downstream artifacts exist). "
+                "Omission is not acceptable on a withdrawal."
+            )
+
+        return self
+
 
 class LinguisticEntry(LinguisticEntryCreate):
     id: str
+
+
+# ---------- Audit event schema (Slice C) ----------
+
+AuditOp = Literal[
+    "create_entry",
+    "auth_denied",
+    "migration_prepared",
+    "consent_revoked",
+]
+
+
+class AuditEvent(BaseModel):
+    """Strict schema for every line appended to data/audit_log.jsonl.
+
+    Enforces `extra='forbid'` so a typo'd or unknown field never silently
+    lands in the audit trail. `_append_audit` validates every event against
+    this model before the filesystem write; a ValidationError aborts the
+    append loudly rather than persisting bad metadata.
+
+    Fields are intentionally optional+nullable so this single model covers
+    all ops: the per-op schema is implied by which fields a given op
+    populates (create_entry uses entry_id; auth_denied uses reason; etc.).
+    Strictness comes from forbidding unknown fields, not from per-op
+    required-fields tightening — that lives in the call sites in
+    create_entry, require_api_token, and the migration scripts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    audit_schema_version: int
+    ts: str
+    op: AuditOp
+
+    # Entry-scoped fields (create_entry, consent_revoked)
+    entry_id: Optional[str] = None
+    entry_schema_version: Optional[int] = None
+    consent_status: Optional[ConsentStatus] = None
+    visibility_status: Optional[VisibilityStatus] = None
+    request_origin: Optional[str] = None
+    auth_mode: Optional[str] = None
+
+    # auth_denied
+    reason: Optional[str] = None
+
+    # migration_prepared
+    migration_version: Optional[int] = None
+    source_path: Optional[str] = None
+    target_path: Optional[str] = None
+    record_count: Optional[int] = None
+
+    # consent_revoked
+    revocation_actor: Optional[str] = None
+    revocation_reason: Optional[str] = None
+    downstream_invalidation_refs: Optional[List[str]] = None
 
 
 # ---------- Entry storage ----------
@@ -173,20 +355,25 @@ _AUDIT_LOG_FILE = _DATA_DIR / "audit_log.jsonl"
 #   v1 — Step 6 — create_entry op only (never persisted on disk; test leak cleaned).
 #   v2 — Step 7 — added auth_mode field to create_entry; added auth_denied op.
 #   v3 — Stage A — added migration_prepared op for migration scripts (Slice 1).
-# The bump is forward-only and additive: readers parsing v3 lines see all v2
+#   v4 — Governance integrity — strict AuditEvent schema (extra='forbid')
+#        validates every event before persistence; added consent_revoked op;
+#        create_entry now records consent_status + visibility_status so the
+#        audit trail captures the governance state of every created entry.
+# The bump is forward-only and additive: readers parsing v4 lines see all v3
 # fields unchanged. The version tag tells consumers what set of ops + fields
 # they may encounter.
 #
 # CHOKEPOINT NOTE — every governance-affecting write SHOULD result in an
 # _append_audit() call. Today that means:
 #   - HTTP create_entry            -> op: "create_entry"     (app.main)
+#   - HTTP entry with withdrawn    -> op: "consent_revoked"  (app.main, +)
 #   - HTTP auth denial             -> op: "auth_denied"      (app.main)
 #   - Migration script preparation -> op: "migration_prepared" (scripts/migrate_*)
 # Other writers (hook decisions, live_listener sessions, operator filesystem
 # rituals) are documented bypass surfaces — see governance-hardening inventory
 # report and Slice 2+ proposals. Do not add new write paths without an audit
 # line.
-AUDIT_SCHEMA_VERSION = 3
+AUDIT_SCHEMA_VERSION = 4
 
 # Step 7 — shared-secret auth + localhost allowlist.
 # Read by require_api_token() at request time (not module load) so tests can
@@ -235,7 +422,11 @@ def _audit_safe(event: dict) -> None:
     """
     try:
         _append_audit(event)
-    except OSError as exc:
+    except (OSError, ValidationError) as exc:
+        # ValidationError here means the caller passed a malformed event
+        # (typo, unknown field, missing required) — a programming bug, but
+        # on the deny path we MUST NOT let it change the security outcome.
+        # Surface to stderr like an OSError would be.
         print(
             f"[audit-warn] {event.get('op','?')}: audit append failed: {exc}. "
             f"Event lost: {json.dumps(event, ensure_ascii=False)}",
@@ -315,16 +506,27 @@ def _append_audit(event: dict) -> None:
       - no rename, no temp file — the file's prior contents are never
         touched, only extended
 
+    Strict-schema gate (Slice C): the event is validated through
+    AuditEvent before any filesystem write. Unknown fields (typos, new
+    metadata that hasn't been added to the schema yet) raise
+    ValidationError BEFORE the line is appended — closing the
+    "malformed-metadata silent bypass" surface where a caller-supplied
+    dict could land a garbage audit line that downstream readers would
+    silently accept.
+
     Why no temp+rename like _write_entries? An append is not a replace.
     The prior bytes of the audit log are the audit record; we must extend
     them in place. Crash mid-append may leave a partial trailing line —
     JSONL readers are expected to detect and ignore lines that fail to
     parse as JSON, which is the standard JSONL recovery convention.
 
-    Caller (create_entry) catches OSError and surfaces it as a 500 with
-    the persisted entry_id named, so an audit-write failure cannot be
-    silently swallowed.
+    Caller (create_entry) catches OSError + ValidationError and surfaces
+    them as a 500 with the persisted entry_id named, so an audit-write
+    failure cannot be silently swallowed.
     """
+    # Strict validation first — never write a malformed audit line.
+    AuditEvent.model_validate(event)
+
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     line = json.dumps(event, ensure_ascii=False) + "\n"
     with open(_AUDIT_LOG_FILE, "a", encoding="utf-8") as fh:
@@ -613,18 +815,28 @@ def create_entry(
     # names the entry_id explicitly so the operator can reconcile rather
     # than the audit failure being silently swallowed. This is "loud, not
     # corrupting": entries are intact; audit has a known, surfaced gap.
+    #
+    # Slice C: every create_entry line now records consent_status +
+    # visibility_status so the audit trail captures the governance posture
+    # of the created entry. When consent_status == "withdrawn" we emit an
+    # ADDITIONAL consent_revoked line (op-specific accountability fields)
+    # tied to the same entry_id. Two lines, two ops, one entry — the
+    # operational event and the governance event are both legible.
+    request_origin = request.client.host if request.client else "unknown"
     audit_event = {
         "audit_schema_version": AUDIT_SCHEMA_VERSION,
         "ts": _utc_now_iso(),
         "op": "create_entry",
         "entry_id": entry.id,
         "entry_schema_version": entry.entry_schema_version,
-        "request_origin": (request.client.host if request.client else "unknown"),
+        "consent_status": entry.consent_status,
+        "visibility_status": entry.visibility_status,
+        "request_origin": request_origin,
         "auth_mode": auth_mode,  # Step 7 — how this request was authenticated
     }
     try:
         _append_audit(audit_event)
-    except OSError as exc:
+    except (OSError, ValidationError) as exc:
         raise HTTPException(
             status_code=500,
             detail=(
@@ -632,6 +844,35 @@ def create_entry(
                 f"Reconcile manually before retrying to avoid a duplicate entry."
             ),
         ) from exc
+
+    if entry.consent_status == "withdrawn":
+        revocation_event = {
+            "audit_schema_version": AUDIT_SCHEMA_VERSION,
+            "ts": _utc_now_iso(),
+            "op": "consent_revoked",
+            "entry_id": entry.id,
+            "entry_schema_version": entry.entry_schema_version,
+            "consent_status": entry.consent_status,
+            "visibility_status": entry.visibility_status,
+            "request_origin": request_origin,
+            "auth_mode": auth_mode,
+            "revocation_actor": entry.consent_override_actor,
+            "revocation_reason": entry.consent_override_reason,
+            "downstream_invalidation_refs": list(entry.downstream_invalidation_refs),
+        }
+        try:
+            _append_audit(revocation_event)
+        except (OSError, ValidationError) as exc:
+            # Loud, not corrupting: the entry AND the create_entry audit line
+            # already landed. The missing line is the revocation trace.
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Entry {entry.id} was persisted and create_entry audited, "
+                    f"but consent_revoked audit append failed: {exc}. "
+                    f"Operator must reconcile the revocation audit gap manually."
+                ),
+            ) from exc
 
     return entry
 
