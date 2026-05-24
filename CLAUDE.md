@@ -223,7 +223,9 @@ Hooks in `hooks/` enforce data governance automatically (wired via `.claude/sett
 
 ### Operational assumptions
 
-The governance store (`data/entries.json`), the audit log (`data/audit_log.jsonl`), and the migration scripts have documented ceilings, single-worker assumptions, and emergency-recovery procedures. See `OPS_PLAYBOOK.md` → **Governance & Storage Operations** for the full inventory of guaranteed behaviors, operator-expected behaviors, and unsupported scenarios as of `governance-hardening` commit `2546377`.
+The governance store (`data/entries.json`), the audit log (`data/audit_log.jsonl`), and the migration scripts have documented ceilings, single-worker assumptions, and emergency-recovery procedures. See `OPS_PLAYBOOK.md` → **Governance & Storage Operations** for the full inventory of guaranteed behaviors, operator-expected behaviors, and unsupported scenarios as of `governance-hardening` commit `50c109f` (Slice 1 + Slice C landed; Slice 2 still deferred).
+
+Slice C (commit `50c109f`) added: strict `AuditEvent` schema gate on every audit-log write (malformed metadata cannot land silently); override accountability fields on `LinguisticEntryCreate` (`irreversible_acknowledged`, `consent_override_actor`, `consent_override_reason`, `downstream_invalidation_refs`); a `consent_revoked` audit op emitted on every withdrawal-creating POST; and `AUDIT_SCHEMA_VERSION` bumped 3 → 4 (forward-only, additive). Architectural ceilings (in-process imports, filesystem edits, audit-log spoofing, `live_listener/` parallel domain) are unchanged.
 
 ---
 

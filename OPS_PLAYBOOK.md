@@ -183,7 +183,7 @@ Reopen the incident log and add:
 
 ## Governance & Storage Operations
 
-**Scope:** behavior of the `data/entries.json` store, the `data/audit_log.jsonl` audit log, the migration scripts in `scripts/`, the consent-gate Bash hook, and the shared-secret auth on `/entries`. Reflects the state of `governance-hardening` at commit `2546377` (Slice 1 landed; Slice 2 deferred).
+**Scope:** behavior of the `data/entries.json` store, the `data/audit_log.jsonl` audit log, the migration scripts in `scripts/`, the consent-gate Bash hook, the shared-secret auth on `/entries`, and the override-accountability + strict-audit-schema gates added by Slice C. Reflects the state of `governance-hardening` at commit `50c109f` (Slice 1 + Slice C landed; Slice 2 — Stage B operator helper, Stage C Write/Edit hard-gate, Stage D hook-denial audit — remain deferred).
 
 This section documents what the system **guarantees**, what the operator is **expected to ensure**, and what is **unsupported today**. It is descriptive, not aspirational — every claim corresponds to behavior in committed code.
 
@@ -229,10 +229,13 @@ The audit log (`data/audit_log.jsonl`) is the system's record of governance-affe
 - **`request_origin` is the immediate TCP peer**, not the original caller. Behind a reverse proxy, audit records show the proxy's address. `X-Forwarded-For` is not honored — accepting it without explicit trust scope would be a spoofing vector.
 - **`auth_mode` is informational**, not an identity claim. `"token"` means a valid token was presented; it does not say who presented it. `"localhost:127.0.0.1"` means the request came from a configured local origin. Neither field maps to a human actor.
 - **`migration_prepared.request_origin` is a self-reported literal** (`"local-cli"`). Anyone running a migration script claims `local-cli` as origin.
+- **(Slice C) Write-side schema integrity, not forgery resistance.** Every line appended by `_append_audit` is first validated against the `AuditEvent` Pydantic model (`extra='forbid'`). Unknown fields and unknown ops raise `ValidationError` BEFORE the filesystem touch — closing the silent-malformed-metadata surface. This does NOT prevent direct filesystem appends from spoofing well-formed lines (no log signing in v0); it only prevents the code from producing malformed lines.
+- **(Slice C) `AuditEvent` is permissive across ops.** Per-op required-fields tightening lives in the call sites (in `create_entry`, `require_api_token`, the migration scripts), not in the model. A reviewer auditing whether a given op has the right fields populated must read the call site, not the model. Per-op discriminated-union tightening is a possible future Slice.
+- **(Slice C) `revocation_actor` / `revocation_reason` on `consent_revoked` are unauthenticated assertions.** They prove the API received an accountability claim. They do NOT prove who made the claim — there is no cryptographic binding to `auth_mode`.
 
-**Guaranteed:** every successful `POST /entries`, every auth denial, and every successful `python scripts/migrate_entries_vN.py` produces one audit line. Lines are fsync-durable before the caller sees success.
+**Guaranteed:** every successful `POST /entries` produces at least one audit line (`create_entry`, plus a second `consent_revoked` line when the entry's `consent_status` is `"withdrawn"`); every auth denial produces an `auth_denied` line; every successful `python scripts/migrate_entries_vN.py` produces one `migration_prepared` line. Every line passes strict `AuditEvent` schema validation before write. Lines are fsync-durable before the caller sees success.
 **Operator-expected:** treat the audit log as the system's record of *what the code did*, not as evidence of who initiated an action or whether downstream operator steps completed.
-**Unsupported today:** rolling back audit history; rotating or archiving the file; reading without trusting line content.
+**Unsupported today:** rolling back audit history; rotating or archiving the file; reading without trusting line content; cryptographically verifying actor identity from `revocation_actor` / `consent_override_actor`.
 
 ### Backup locality
 
@@ -283,16 +286,32 @@ Bugs and edge cases that are real but not blocking today:
 
 | Category | What |
 |---|---|
-| **Guaranteed by code** | Atomic single-write crash safety. POST /entries either lands entirely or not at all. Unknown fields are rejected at 422 (inbound) / 500 (outbound). Canonical consent enum is enforced at the model boundary. Canonical speaker_id format is enforced. Auth fails closed in every misconfiguration mode. Every successful create_entry, auth_denied, and migration_prepared event produces one audit line. Audit append failure surfaces as 500 (create) or stderr warning (deny). |
+| **Guaranteed by code** | Atomic single-write crash safety. POST /entries either lands entirely or not at all. Unknown fields are rejected at 422 (inbound) / 500 (outbound). Canonical consent enum is enforced at the model boundary. Canonical speaker_id format is enforced. Auth fails closed in every misconfiguration mode. Every successful create_entry, auth_denied, and migration_prepared event produces one audit line. Audit append failure surfaces as 500 (create) or stderr warning (deny). **(Slice C)** `consent_status='withdrawn'` is rejected unless `irreversible_acknowledged=True`, `visibility_status='blocked'`, and all `ai_*_allowed=False`. Any consent override (mismatch or revocation) is rejected unless `consent_override_actor` and `consent_override_reason` are non-empty. Revocation is rejected unless `downstream_invalidation_refs` is explicitly present (empty list allowed as affirmative declaration). Every `data/audit_log.jsonl` line passes strict `AuditEvent` (`extra='forbid'`) schema validation before write; malformed metadata and unknown ops are rejected pre-write. Every withdrawal-creating POST emits an additional `consent_revoked` audit line tied to the same `entry_id` carrying `revocation_actor`, `revocation_reason`, `downstream_invalidation_refs`. |
 | **Operationally expected of the operator** | Run uvicorn with a single worker. Run migration scripts from repo root, with the API stopped, one at a time. Keep `.pre-vN.bak` backups outside the repo if cross-machine rollback may be needed. Treat the audit log as a record of code actions, not of human actors. Rotate `QV_API_TOKEN` during coordinated downtime windows. Verify a prepared migration's `.migrated` file before applying. After a 500-with-entry-id, verify before retry. |
 | **Not supported today** | Multi-worker uvicorn. Concurrent migration scripts. Concurrent operator + API writes. Rolling back audit log lines. Audit log rotation/archival. `X-Forwarded-For` honoring. Token overlap during rotation. Cross-machine backup recovery. Multi-speaker batch consent enforcement. IPv4-mapped IPv6 local-origin detection. Idempotent POST retry. |
 | **Policy/process dependent** | Whether and how to record an operator's manual revert in the audit log (no code support). Whether a partial `.migrated` from a killed migration is safe to apply (operator judgment). Whether a token leak requires an incident log (use the AI Provider runbook above as a model). Cultural-validation decisions affecting `consent_status` (governed by `06_Data_Governance/Consent_Framework_v1.md` and `Withdrawal_Protocol_v1.md`). |
 
 ### Slice 2 decisions (recorded for later implementation)
 
-The next slice (Stage B operator helper + Stage C Write/Edit hard-gate) is deferred but the following decisions have been recorded for when implementation resumes:
+The next slice (Stage B operator helper + Stage C Write/Edit hard-gate + Stage D hook-denial audit) is deferred but the following decisions have been recorded for when implementation resumes. Note: the originally-planned 3 → 4 schema bump was consumed by Slice C; Slice 2's bump is now renumbered to 4 → 5.
 
-- **`AUDIT_SCHEMA_VERSION` bump 3 → 4** on the Stage B commit. New op `migration_applied` joins the schema as a non-additive bump for discipline.
+- **`AUDIT_SCHEMA_VERSION` bump 4 → 5** on the Stage B commit (renumbered from 3 → 4 — Slice C took 3 → 4 for the `consent_revoked` op + strict `AuditEvent` schema). New op `migration_applied` joins the schema on Stage B as a non-additive bump for discipline.
 - **Stale `data/entries.json.tmp`**: Stage B's helper fails closed if a stale `.tmp` exists from a concurrent or interrupted write. Operator must investigate and clear it before retry.
 - **Stage C's block message**: fixed text in `hooks/pre-data-operation.sh`. No env-var configurability. Single canonical phrasing pointing at the two legitimate write paths.
 - **`sys.modules` cleanup in `test_migration_audit.py`**: lands as a separate precursor commit (Stage A.1) before Slice 2, not bundled into Stage B's tests.
+- **Stage D (hook-denial audit)** — `consent-gate.sh` and `pre-data-operation.sh` denials produce stdout/stderr today and no audit line. Stage D wires them into `data/audit_log.jsonl` with new ops (`hook_denied_consent`, `hook_denied_restricted_write` — names provisional). Until Stage D lands, blocked operations leave no trace in the canonical audit log.
+
+### Slice C summary (committed at `50c109f`)
+
+Slice C narrowed three pre-existing gaps in the HTTP API chokepoint. It did NOT address architectural ceilings; those remain documented and unchanged. Slice C is fully reviewable as a single commit on the `governance-hardening` branch.
+
+| Surface | Pre-Slice-C | Post-Slice-C |
+|---|---|---|
+| Withdrawal recording | Accepted with no acknowledgment, any visibility, any AI permissions | Requires `irreversible_acknowledged=True`, `visibility_status='blocked'`, all `ai_*_allowed=False` |
+| Consent override | Could land silently when speaker and community consent diverged | Requires non-empty `consent_override_actor` + `consent_override_reason` |
+| Downstream invalidation on revocation | No record of what artifacts the revocation should invalidate | Requires explicit `downstream_invalidation_refs` list (empty `[]` is an affirmative "no downstream") |
+| Audit log line shape | Whatever dict the caller passed; typos persisted silently | Strict `AuditEvent` (`extra='forbid'`) validated pre-write; unknown fields and unknown ops rejected |
+| Audit visibility of revocation | Only a `create_entry` line; revocation accountability fields not recorded | Additional `consent_revoked` line emitted with `revocation_actor`, `revocation_reason`, `downstream_invalidation_refs` |
+| Audit line of `create_entry` | `entry_id`, `entry_schema_version`, `request_origin`, `auth_mode` | Same + `consent_status` + `visibility_status` (governance posture captured) |
+
+Test suite: 76 passed (was 57 pre-Slice-C; 19 new tests directly trace to the guarantees above plus the AuditEvent strict-schema gate).
