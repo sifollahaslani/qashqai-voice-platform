@@ -221,6 +221,12 @@ Hooks in `hooks/` enforce data governance automatically (wired via `.claude/sett
 5. The community's cultural integrity is the purpose of this project, not a constraint on it.
 6. **All content — platform responses, outreach posts, classroom material, dataset annotations — must be strictly cultural and educational. Never political.**
 
+### Operational assumptions
+
+The governance store (`data/entries.json`), the audit log (`data/audit_log.jsonl`), and the migration scripts have documented ceilings, single-worker assumptions, and emergency-recovery procedures. See `OPS_PLAYBOOK.md` → **Governance & Storage Operations** for the full inventory of guaranteed behaviors, operator-expected behaviors, and unsupported scenarios as of `governance-hardening` commit `50c109f` (Slice 1 + Slice C landed; Slice 2 still deferred).
+
+Slice C (commit `50c109f`) added: strict `AuditEvent` schema gate on every audit-log write (malformed metadata cannot land silently); override accountability fields on `LinguisticEntryCreate` (`irreversible_acknowledged`, `consent_override_actor`, `consent_override_reason`, `downstream_invalidation_refs`); a `consent_revoked` audit op emitted on every withdrawal-creating POST; and `AUDIT_SCHEMA_VERSION` bumped 3 → 4 (forward-only, additive). Architectural ceilings (in-process imports, filesystem edits, audit-log spoofing, `live_listener/` parallel domain) are unchanged.
+
 ---
 
 ## Project milestones (as of 2026-04-07)
