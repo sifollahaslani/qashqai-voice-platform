@@ -42,3 +42,8 @@ build/
 *.log
 *_BACKUP.md
 _BACKUP.project_register.md
+
+*.env
+*/.env
+*_diff.txt
+*.txt.txt
