@@ -37,8 +37,11 @@ LONDON_ONE_PAGER.md
 out/
 dist/
 build/
-.vscode/
+.vscode/s
 .idea/
 *.log
 *_BACKUP.md
 _BACKUP.project_register.md
+*.env
+.env
+.env.*
