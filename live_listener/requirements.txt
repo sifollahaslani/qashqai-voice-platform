@@ -4,3 +4,4 @@ openai
 anthropic
 python-dotenv
 faster-whisper
+mistralai

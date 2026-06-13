@@ -45,7 +45,13 @@ from openai import OpenAI, AuthenticationError, APIConnectionError, APIStatusErr
 # Ensure imports work when run from any working directory
 sys.path.insert(0, os.path.dirname(__file__))
 
-from analyzer import get_anthropic_client, analyze_transcript, format_analysis_for_terminal
+from analyzer import (
+    get_anthropic_client,
+    get_mistral_client,
+    analyze_transcript,
+    analyze_transcript_mistral,
+    format_analysis_for_terminal,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -63,37 +69,86 @@ TRANSCRIPTS_DIR = pathlib.Path("transcripts")   # Local STT session logs
 # Environment loading
 # ---------------------------------------------------------------------------
 
-def load_env() -> tuple[str, str, str]:
+def load_env() -> str:
     """
-    Load and validate required environment variables.
+    Load and validate required environment variables for OpenAI STT fieldwork.
+
+    Validates OPENAI_API_KEY always. Validates ANTHROPIC_API_KEY + ANTHROPIC_MODEL
+    when AI_PROVIDER is not "mistral"; validates MISTRAL_API_KEY when it is.
+    Analysis-client creation is handled separately in build_analyze_fn().
 
     Returns:
-        Tuple of (openai_api_key, anthropic_api_key, anthropic_model).
+        openai_api_key string.
 
     Raises:
         SystemExit: If any required variable is missing.
     """
     load_dotenv()
 
+    provider = os.environ.get("AI_PROVIDER", "openai").lower()
     openai_key = os.environ.get("OPENAI_API_KEY", "")
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    model = os.environ.get("ANTHROPIC_MODEL", "")
 
-    missing = [
-        name for name, val in [
-            ("OPENAI_API_KEY", openai_key),
-            ("ANTHROPIC_API_KEY", anthropic_key),
-            ("ANTHROPIC_MODEL", model),
-        ]
-        if not val
-    ]
+    missing = []
+    if not openai_key:
+        missing.append("OPENAI_API_KEY")
+
+    if provider == "mistral":
+        if not os.environ.get("MISTRAL_API_KEY"):
+            missing.append("MISTRAL_API_KEY")
+    else:
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            missing.append("ANTHROPIC_API_KEY")
+        if not os.environ.get("ANTHROPIC_MODEL"):
+            missing.append("ANTHROPIC_MODEL")
 
     if missing:
         print(f"\n❌ متغیرهای محیطی تنظیم نشده: {', '.join(missing)}")
         print("   فایل .env.example را به .env کپی کرده و کلیدها را پر کنید.\n")
         sys.exit(1)
 
-    return openai_key, anthropic_key, model
+    return openai_key
+
+
+def build_analyze_fn():
+    """
+    Build and return a bound transcript-analysis callable based on AI_PROVIDER.
+
+    Reads AI_PROVIDER from environment (default: "openai" → Anthropic path).
+    If AI_PROVIDER=mistral, uses MISTRAL_API_KEY + MISTRAL_MODEL.
+    Otherwise uses ANTHROPIC_API_KEY + ANTHROPIC_MODEL.
+
+    Only text/transcript is ever passed to the provider — no audio, no raw recordings.
+
+    Returns:
+        Callable[[list[str]], dict] — takes transcript_chunks, returns analysis dict.
+
+    Raises:
+        SystemExit: If required keys for the selected provider are missing.
+    """
+    provider = os.environ.get("AI_PROVIDER", "openai").lower()
+
+    if provider == "mistral":
+        mistral_model = os.environ.get("MISTRAL_MODEL", "mistral-large-latest")
+        try:
+            client = get_mistral_client()
+        except RuntimeError as exc:
+            print(f"\n❌ {exc}\n")
+            sys.exit(1)
+        print(f"  🤖  تحلیل زبانی: Mistral ({mistral_model})")
+        return lambda chunks: analyze_transcript_mistral(client, chunks, mistral_model)
+
+    # Default: Anthropic
+    anthropic_model = os.environ.get("ANTHROPIC_MODEL", "")
+    if not anthropic_model:
+        print("\n❌ ANTHROPIC_MODEL is not set. Copy .env.example to .env and fill it in.\n")
+        sys.exit(1)
+    try:
+        client = get_anthropic_client()
+    except RuntimeError as exc:
+        print(f"\n❌ {exc}\n")
+        sys.exit(1)
+    print(f"  🤖  تحلیل زبانی: Anthropic ({anthropic_model})")
+    return lambda chunks: analyze_transcript(client, chunks, anthropic_model)
 
 
 # ---------------------------------------------------------------------------
@@ -209,21 +264,20 @@ def transcribe_chunk(openai_client: OpenAI, frames: np.ndarray) -> str:
 # Main loop
 # ---------------------------------------------------------------------------
 
-def run_listener(openai_client: OpenAI, anthropic_client, model: str) -> None:
+def run_listener(openai_client: OpenAI, analyze_fn) -> None:
     """
     Main capture-transcribe-analyze loop.
 
     Captures audio in 20-second chunks using sounddevice, transcribes each
     chunk via Whisper (in-memory only), appends the transcript to a rolling
-    3-chunk deque, then sends the buffer to Claude for Persian analysis.
+    3-chunk deque, then sends the buffer to the configured analysis provider.
 
     The loop runs until Ctrl+C. On exit, both the audio frames and the
     transcript buffer are explicitly cleared before the process ends.
 
     Args:
-        openai_client: Authenticated OpenAI client.
-        anthropic_client: Authenticated Anthropic client.
-        model: Claude model ID string.
+        openai_client: Authenticated OpenAI client (for Whisper STT only).
+        analyze_fn: Callable[[list[str]], dict] returned by build_analyze_fn().
     """
     # Rolling transcript buffer — auto-evicts oldest chunk beyond maxlen
     transcript_buffer: collections.deque[str] = collections.deque(maxlen=BUFFER_MAX_CHUNKS)
@@ -278,23 +332,19 @@ def run_listener(openai_client: OpenAI, anthropic_client, model: str) -> None:
             transcript_buffer.append(transcript)
             chunk_count += 1
 
-            # --- Analyze with Claude ---
+            # --- Analyze with configured provider ---
             print("  🔍  در حال تحلیل زبانی...")
             try:
-                analysis = analyze_transcript(
-                    client=anthropic_client,
-                    transcript_chunks=list(transcript_buffer),
-                    model=model,
-                )
+                analysis = analyze_fn(list(transcript_buffer))
                 output = format_analysis_for_terminal(analysis)
                 print("\n" + "─" * 60)
                 print(output)
                 print("─" * 60 + "\n")
 
             except ValueError as exc:
-                print(f"  ⚠️   پاسخ Claude قابل تجزیه نبود: {exc}\n")
+                print(f"  ⚠️   پاسخ قابل تجزیه نبود: {exc}\n")
             except Exception as exc:
-                print(f"  ⚠️   خطا در تحلیل Claude: {exc}\n")
+                print(f"  ⚠️   خطا در تحلیل: {exc}\n")
 
     except KeyboardInterrupt:
         pass   # falls through to finally
@@ -342,7 +392,7 @@ def transcribe_chunk_local(whisper_model, frames: np.ndarray) -> tuple[str, str]
     return text, info.language
 
 
-def run_local_listener(whisper_model, anthropic_client, model: str) -> None:
+def run_local_listener(whisper_model, analyze_fn) -> None:
     """
     Fieldwork loop using local faster-whisper STT.
 
@@ -355,8 +405,7 @@ def run_local_listener(whisper_model, anthropic_client, model: str) -> None:
 
     Args:
         whisper_model: Loaded faster_whisper.WhisperModel instance.
-        anthropic_client: Authenticated Anthropic client.
-        model: Claude model ID string.
+        analyze_fn: Callable[[list[str]], dict] returned by build_analyze_fn().
     """
     transcript_buffer: collections.deque[str] = collections.deque(maxlen=BUFFER_MAX_CHUNKS)
     chunk_count = 0
@@ -416,14 +465,10 @@ def run_local_listener(whisper_model, anthropic_client, model: str) -> None:
             transcript_buffer.append(transcript)
             chunk_count += 1
 
-            # --- Claude analysis ---
+            # --- Analysis with configured provider ---
             print("  🔍  در حال تحلیل زبانی...")
             try:
-                analysis = analyze_transcript(
-                    client=anthropic_client,
-                    transcript_chunks=list(transcript_buffer),
-                    model=model,
-                )
+                analysis = analyze_fn(list(transcript_buffer))
                 output = format_analysis_for_terminal(analysis)
                 print("\n" + "─" * 60)
                 print(output)
@@ -431,9 +476,9 @@ def run_local_listener(whisper_model, anthropic_client, model: str) -> None:
                 transcript_file.write(f"[analysis]\n{output}\n\n")
                 transcript_file.flush()
             except ValueError as exc:
-                print(f"  ⚠️   پاسخ Claude قابل تجزیه نبود: {exc}\n")
+                print(f"  ⚠️   پاسخ قابل تجزیه نبود: {exc}\n")
             except Exception as exc:
-                print(f"  ⚠️   خطا در تحلیل Claude: {exc}\n")
+                print(f"  ⚠️   خطا در تحلیل: {exc}\n")
 
     except KeyboardInterrupt:
         pass   # falls through to finally
@@ -670,29 +715,28 @@ def main() -> None:
     enforce_fieldwork_gate(flags)
 
     if "--local-stt" in flags:
-        # Local path: no OPENAI_API_KEY needed — only Anthropic for analysis.
+        # Local path: no OPENAI_API_KEY needed — analysis provider handles its own key.
         load_dotenv()
-        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        model = os.environ.get("ANTHROPIC_MODEL", "")
-        missing = [
-            name for name, val in [
-                ("ANTHROPIC_API_KEY", anthropic_key),
-                ("ANTHROPIC_MODEL", model),
+        provider = os.environ.get("AI_PROVIDER", "openai").lower()
+        if provider == "mistral":
+            if not os.environ.get("MISTRAL_API_KEY"):
+                print("\n❌ MISTRAL_API_KEY not set. Copy .env.example to .env and fill it in.\n")
+                sys.exit(1)
+        else:
+            missing = [
+                name for name, val in [
+                    ("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", "")),
+                    ("ANTHROPIC_MODEL", os.environ.get("ANTHROPIC_MODEL", "")),
+                ]
+                if not val
             ]
-            if not val
-        ]
-        if missing:
-            print(f"\n❌ متغیرهای محیطی تنظیم نشده: {', '.join(missing)}")
-            print("   فایل .env.example را به .env کپی کرده و کلیدها را پر کنید.\n")
-            sys.exit(1)
+            if missing:
+                print(f"\n❌ متغیرهای محیطی تنظیم نشده: {', '.join(missing)}")
+                print("   فایل .env.example را به .env کپی کرده و کلیدها را پر کنید.\n")
+                sys.exit(1)
 
         request_consent()
-
-        try:
-            anthropic_client = get_anthropic_client()
-        except RuntimeError as exc:
-            print(f"\n❌ {exc}\n")
-            sys.exit(1)
+        analyze_fn = build_analyze_fn()
 
         try:
             sd.check_input_settings(samplerate=SAMPLE_RATE, channels=CHANNELS)
@@ -715,11 +759,11 @@ def main() -> None:
             print(f"\n❌ خطا در بارگذاری مدل faster-whisper: {exc}\n")
             sys.exit(1)
 
-        run_local_listener(whisper_model, anthropic_client, model)
+        run_local_listener(whisper_model, analyze_fn)
         sys.exit(0)
 
     # --- Fieldwork mode with OpenAI STT (zdr-confirmed or consent-override) ---
-    openai_key, anthropic_key, model = load_env()
+    openai_key = load_env()
 
     request_consent()
 
@@ -729,11 +773,7 @@ def main() -> None:
         print(f"\n❌ خطا در ایجاد کلاینت OpenAI: {exc}\n")
         sys.exit(1)
 
-    try:
-        anthropic_client = get_anthropic_client()
-    except RuntimeError as exc:
-        print(f"\n❌ {exc}\n")
-        sys.exit(1)
+    analyze_fn = build_analyze_fn()
 
     try:
         sd.check_input_settings(samplerate=SAMPLE_RATE, channels=CHANNELS)
@@ -742,7 +782,7 @@ def main() -> None:
         print("   لطفاً دسترسی به میکروفون را در تنظیمات ویندوز فعال کنید.\n")
         sys.exit(1)
 
-    run_listener(openai_client, anthropic_client, model)
+    run_listener(openai_client, analyze_fn)
 
 
 if __name__ == "__main__":
